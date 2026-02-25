@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth-helpers';
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
     const { id } = await context.params;
@@ -17,6 +18,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+    const { error } = await requireAuth();
+    if (error) return error;
+
     const { id } = await context.params;
     const data = await request.json();
     const { 
@@ -69,6 +73,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+    const { error } = await requireAuth();
+    if (error) return error;
+
     const { id } = await context.params;
     try {
         await prisma.shiftTeam.delete({

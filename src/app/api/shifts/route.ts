@@ -1,7 +1,7 @@
 import { ShiftPeriod } from '@prisma/client';
 import { NextResponse, NextRequest } from 'next/server';
 import { toZonedTime } from 'date-fns-tz';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import { isWeekend, isHoliday } from '@/lib/date-utils';
 
@@ -11,10 +11,8 @@ export async function GET(request: NextRequest) {
   const teamId = searchParams.get('teamId');
 
   // Verificar autenticação
-  const currentUser = await getCurrentUser();
-  if (!currentUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-  }
+  const { error, user: currentUser } = await requireAuth();
+  if (error) return error;
 
   if (!teamId) {
     return NextResponse.json([]);
@@ -59,10 +57,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: Request) {
   try {
     // Verificar autenticação
-    const currentUser = await getCurrentUser();
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+    const { error, user: currentUser } = await requireAuth();
+    if (error) return error;
 
     const data = await request.json();
     const { date, period, physiotherapistId, shiftTeamId } = data as {

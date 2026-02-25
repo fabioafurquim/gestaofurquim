@@ -1,6 +1,6 @@
 import { ShiftPeriod } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 
 // PUT (Update) a shift
@@ -12,10 +12,8 @@ export async function PUT(
   const id = parseInt(idStr, 10);
   try {
     // Verificar autenticação
-    const currentUser = await getCurrentUser();
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+    const { error, user: currentUser } = await requireAuth();
+    if (error) return error;
 
     const data = await request.json();
     const { period, physiotherapistId } = data as { period: ShiftPeriod; physiotherapistId: number | string };
@@ -79,10 +77,8 @@ export async function DELETE(
 
   try {
     // Verificar autenticação
-    const currentUser = await getCurrentUser();
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+    const { error, user: currentUser } = await requireAuth();
+    if (error) return error;
 
     // Verificar se o plantão existe e obter informações
     const existingShift = await prisma.shift.findUnique({

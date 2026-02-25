@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
@@ -23,15 +22,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
-
-    if (!currentUser) {
-      return NextResponse.json(
-        { error: 'Acesso negado. Usuário não autenticado.' },
-        { status: 401 }
-      );
-    }
+    const { error, user } = await requireAuth();
+    if (error) return error;
 
     const data = await request.json();
     const {
