@@ -1,0 +1,35 @@
+# Dockerfile simplificado para VPS Hostinger
+FROM node:20-alpine
+
+# Instalar dependências do sistema
+RUN apk add --no-cache libc6-compat openssl
+
+WORKDIR /app
+
+# Copiar todos os arquivos
+COPY . .
+
+# Instalar dependências SEM rodar scripts (evita Prisma 7 no postinstall)
+RUN npm install --legacy-peer-deps --ignore-scripts
+
+# Instalar Prisma 6 globalmente e gerar cliente
+RUN npm install -g prisma@6.14.0 && prisma generate
+
+# Configurar variáveis de ambiente para build
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Fazer build da aplicação
+RUN npm run build
+
+# Criar diretórios necessários
+RUN mkdir -p uploads logs
+
+# Expor porta
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# Comando para iniciar
+CMD ["npm", "start"]

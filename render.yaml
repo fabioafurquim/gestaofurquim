@@ -1,0 +1,20 @@
+services:
+  # Serviço da Aplicação Web (Next.js)
+  - type: web
+    name: plantaofisio-app
+    env: node
+    plan: free
+    buildCommand: "npm install && npm run migrate:production && npm run build:production"
+    startCommand: "npm run start:production"
+    envVars:
+      - key: NEXTAUTH_URL
+        generateValue: true
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+    # DATABASE_URL e DIRECT_URL devem ser configuradas manualmente no painel do Render
+    # DATABASE_URL: postgresql://postgres:senha@host:6543/postgres?pgbouncer=true&connection_limit=1
+    # DIRECT_URL: postgresql://postgres:senha@host:5432/postgres

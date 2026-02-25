@@ -1,0 +1,226 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Physiotherapist {
+  id              Int                     @id @default(autoincrement())
+  name            String
+  email           String                  @unique
+  phone           String?
+  crefito         String                  @unique
+  cpf             String                  @unique
+  rg              String?
+  birthDate       DateTime?
+  address         String?
+  startDate       DateTime
+  exitDate        DateTime?
+  hourValue       Decimal                 @default(0) @db.Decimal(10, 2) // Renomeado de shiftValue
+  additionalValue Decimal                 @default(0) @db.Decimal(10, 2)
+  status          ContractStatus          @default(ACTIVE)
+  contractType    ContractType
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  agencia         String?
+  banco           String?
+  chavePix        String?
+  cnpjEmpresa     String?
+  conta           String?
+  enderecoEmpresa String?
+  nomeEmpresa     String?
+  tipoPix         String?
+  teams           PhysiotherapistTeam[]   // Relação many-to-many com equipes
+  shifts          Shift[]
+  user            User?
+  paymentRecords  PaymentRecord[]         @relation("PaymentRecords")
+}
+
+model ShiftTeam {
+  id                        Int                     @id @default(autoincrement())
+  name                      String                  @unique
+  // Campos antigos (mantidos por compatibilidade - serão removidos futuramente)
+  morningSlots              Int                     @default(0)
+  intermediateSlots         Int                     @default(0)
+  afternoonSlots            Int                     @default(0)
+  nightSlots                Int                     @default(0)
+  // Novos campos para dias úteis (segunda a sexta)
+  weekdayMorningSlots       Int                     @default(0)
+  weekdayIntermediateSlots  Int                     @default(0)
+  weekdayAfternoonSlots     Int                     @default(0)
+  weekdayNightSlots         Int                     @default(0)
+  // Novos campos para fins de semana e feriados
+  weekendMorningSlots       Int                     @default(0)
+  weekendIntermediateSlots  Int                     @default(0)
+  weekendAfternoonSlots     Int                     @default(0)
+  weekendNightSlots         Int                     @default(0)
+  shiftValue                Decimal                 @default(0) @db.Decimal(10, 2) // Novo campo para valor do plantão
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  physiotherapists          PhysiotherapistTeam[]   // Relação many-to-many com fisioterapeutas
+  shifts                    Shift[]
+}
+
+model Shift {
+  id                Int             @id @default(autoincrement())
+  date              DateTime
+  period            ShiftPeriod
+  physiotherapistId Int
+  shiftTeamId       Int
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id])
+  shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id])
+
+  @@unique([date, period, physiotherapistId])
+}
+
+model User {
+  id                 Int              @id @default(autoincrement())
+  email              String           @unique
+  name               String
+  password           String
+  role               UserRole         @default(USER)
+  isFirstLogin       Boolean          @default(true)
+  mustChangePassword Boolean          @default(true)
+  physiotherapistId  Int?             @unique
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  createdBy          Int?
+  creator            User?            @relation("UserCreator", fields: [createdBy], references: [id])
+  createdUsers       User[]           @relation("UserCreator")
+  physiotherapist    Physiotherapist? @relation(fields: [physiotherapistId], references: [id])
+}
+
+// Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
+model PhysiotherapistTeam {
+  id                Int             @id @default(autoincrement())
+  physiotherapistId Int
+  shiftTeamId       Int
+  physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id], onDelete: Cascade)
+  shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([physiotherapistId, shiftTeamId])
+}
+
+model Holiday {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @unique @db.Date
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum ContractStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ContractType {
+  PJ
+  RPA
+  NO_CONTRACT
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum ShiftPeriod {
+  MORNING
+  INTERMEDIATE
+  AFTERNOON
+  NIGHT
+}
+
+// ==========================================
+// MÓDULO DE CONTROLE DE PAGAMENTOS MENSAIS
+// ==========================================
+
+model MonthlyPaymentControl {
+  id              Int                   @id @default(autoincrement())
+  referenceMonth  String                // Formato: "2024-12"
+  status          PaymentControlStatus  @default(OPEN)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  closedAt        DateTime?
+  payments        PaymentRecord[]
+
+  @@unique([referenceMonth])
+}
+
+model PaymentRecord {
+  id                      Int                    @id @default(autoincrement())
+  monthlyControlId        Int
+  monthlyControl          MonthlyPaymentControl  @relation(fields: [monthlyControlId], references: [id], onDelete: Cascade)
+  
+  // Dados do fisioterapeuta (pode ser cadastrado ou não)
+  physiotherapistId       Int?
+  physiotherapist         Physiotherapist?       @relation("PaymentRecords", fields: [physiotherapistId], references: [id])
+  
+  // Dados manuais (para fisioterapeutas não cadastrados)
+  manualName              String?
+  manualEmail             String?
+  manualContractType      ContractType?
+  
+  // Valores
+  grossValue              Decimal                @db.Decimal(10, 2)  // Valor cheio/bruto
+  rpaValorServico         Decimal?               @db.Decimal(10, 2)  // Valor do serviço extraído do RPA
+  
+  // Descontos RPA (quando aplicável)
+  rpaOutrosDescontos      Decimal?               @db.Decimal(10, 2)
+  rpaIss                  Decimal?               @db.Decimal(10, 2)
+  rpaIrrf                 Decimal?               @db.Decimal(10, 2)
+  rpaInss                 Decimal?               @db.Decimal(10, 2)
+  rpaTotalDescontos       Decimal?               @db.Decimal(10, 2)
+  
+  // Valor final
+  netValue                Decimal                @db.Decimal(10, 2)  // Valor líquido a pagar
+  
+  // Arquivos no Google Drive
+  rpaFileId               String?                // ID do arquivo RPA no Drive
+  rpaFileName             String?
+  nfFileId                String?                // ID da Nota Fiscal no Drive (para PJ)
+  nfFileName              String?
+  pixReceiptFileId        String?                // ID do comprovante PIX no Drive
+  pixReceiptFileName      String?
+  
+  // Controle de envio
+  emailSentAt             DateTime?
+  emailStatus             EmailStatus            @default(PENDING)
+  
+  // Controle
+  status                  PaymentRecordStatus    @default(PENDING)
+  paidAt                  DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  
+  @@unique([monthlyControlId, physiotherapistId])
+}
+
+enum PaymentControlStatus {
+  OPEN
+  PROCESSING
+  CLOSED
+}
+
+enum PaymentRecordStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}

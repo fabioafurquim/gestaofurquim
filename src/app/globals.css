@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f8ff;
+  --foreground: #0b132b;
+  --brand-50: #e6f0ff;
+  --brand-100: #cce0ff;
+  --brand-200: #99c2ff;
+  --brand-300: #66a3ff;
+  --brand-400: #3385ff;
+  --brand-500: #0d6efd;
+  --brand-600: #0a58ca;
+  --brand-700: #084298;
+  --brand-800: #052c65;
+  --brand-900: #031633;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* Sidebar gradient */
+.sidebar {
+  background: linear-gradient(180deg, var(--brand-500) 0%, var(--brand-600) 100%);
+}
+
+.sidebar a {
+  color: #fff;
+}
+
+.sidebar a:hover {
+  color: #fff;
+}
+
+.sidebar h1 {
+  color: #fff;
+}
+
+/* Cards e containers */
+main>div,
+.card,
+.table-responsive {
+  background: #fff;
+  border: 1px solid #e9edf3;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
+  padding: 16px;
+}
+
+/* Tabelas */
+.table {
+  border-color: #e9edf3 !important;
+}
+
+.table thead th {
+  background: var(--brand-50);
+  border-bottom: 2px solid #e9edf3;
+}
+
+.table tbody tr:hover {
+  background: #f2f6ff;
+}
+
+/* Botões principais */
+.btn-primary {
+  background-color: var(--brand-500);
+  border-color: var(--brand-500);
+}
+
+.btn-primary:hover {
+  background-color: var(--brand-600);
+  border-color: var(--brand-600);
+}
+
+/* Hovers refinados */
+a:hover {
+  opacity: 0.9;
+}
+
+/* Modais */
+.modal-content {
+  border-radius: 12px;
+  border: 1px solid #e9edf3;
+}
+
+/* Formulários */
+.form-control,
+.form-select {
+  border-radius: 8px;
+  border-color: #dfe6ee;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, .15);
+}
+
+/* Impressão: tipografia menor */
+@media print {
+  body {
+    font-size: 12px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  h2 {
+    font-size: 16px;
+  }
+}
