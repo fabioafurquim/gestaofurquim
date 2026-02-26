@@ -61,3 +61,9 @@ google-token.json
 # Docker Compose (não usar em produção - Coolify gerencia containers)
 docker-compose.yml
 docker-compose.yaml
+
+# Database backups (não commitar - dados sensíveis)
+backup_*.sql
+backup_*.json
+*.sql.gz
+restore-temp.sh

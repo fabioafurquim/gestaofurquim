@@ -33,7 +33,7 @@ Docker Containers
 
 ---
 
-## 🔧 Instalação do Coolify
+## Instalação do Coolify
 
 ### Pré-requisitos do Servidor
 - VPS com Ubuntu 22.04+ ou Debian 11+
@@ -70,7 +70,7 @@ http://187.77.57.122:8000
 
 ---
 
-## ⚙️ Configuração do Projeto
+## Configuração do Projeto
 
 ### 1. Criar Novo Projeto no Coolify
 
@@ -125,7 +125,7 @@ NEXT_PUBLIC_APP_URL=http://furquim.cloud
 
 ---
 
-## 🚀 Deploy via Git
+## Deploy via Git
 
 ### Configuração Inicial
 
