@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import AuthLayout from '@/components/AuthLayout';
 
 interface User {
@@ -37,6 +38,7 @@ interface CreateUserFormData {
 
 export default function UsersPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [physiotherapists, setPhysiotherapists] = useState<Physiotherapist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,27 +52,28 @@ export default function UsersPage() {
     physiotherapistId: '',
   });
   const [formLoading, setFormLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Verifica autenticação e carrega dados
+  // Verifica autenticação via NextAuth
   useEffect(() => {
-    const checkAuthAndLoadData = async () => {
+    if (status === 'loading') return;
+    
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
+    }
+    
+    if (session?.user?.role !== 'ADMIN') {
+      router.push('/');
+      return;
+    }
+  }, [status, session, router]);
+
+  // Carrega dados quando autenticado
+  useEffect(() => {
+    const loadData = async () => {
+      if (status !== 'authenticated' || session?.user?.role !== 'ADMIN') return;
+      
       try {
-        // Verifica se o usuário está autenticado e é admin
-        const authResponse = await fetch('/api/auth/me');
-        if (!authResponse.ok) {
-          router.push('/login');
-          return;
-        }
-        
-        const authData = await authResponse.json();
-        if (authData.user.role !== 'ADMIN') {
-          router.push('/');
-          return;
-        }
-        
-        setCurrentUser(authData.user);
-        
         // Carrega usuários
         const usersResponse = await fetch('/api/users');
         if (usersResponse.ok) {
@@ -92,8 +95,8 @@ export default function UsersPage() {
       }
     };
 
-    checkAuthAndLoadData();
-  }, [router]);
+    loadData();
+  }, [status, session]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -392,7 +395,7 @@ export default function UsersPage() {
                     >
                       Resetar Senha
                     </button>
-                    {currentUser?.id !== user.id && (
+                    {session?.user?.id?.toString() !== user.id && (
                       <button
                         onClick={() => handleDeleteUser(user.id, user.name)}
                         className="inline-flex items-center px-3 py-1 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
