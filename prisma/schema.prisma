@@ -102,6 +102,7 @@ model PhysiotherapistTeam {
   id                Int             @id @default(autoincrement())
   physiotherapistId Int
   shiftTeamId       Int
+  customShiftValue  Decimal?        @db.Decimal(10, 2) // Valor customizado do plantão para este fisioterapeuta nesta equipe
   physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id], onDelete: Cascade)
   shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
   createdAt         DateTime        @default(now())

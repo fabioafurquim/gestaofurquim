@@ -104,6 +104,7 @@ export async function PUT(
     });
 
     // Se teamIds foi fornecido, atualizar as relações com equipes
+    // teamIds pode ser um array simples [1, 2, 3] ou um array de objetos [{teamId: 1, customShiftValue: 100}, ...]
     if (teamIds !== undefined && Array.isArray(teamIds)) {
       // Remover todas as relações existentes
       await prisma.physiotherapistTeam.deleteMany({
@@ -112,11 +113,25 @@ export async function PUT(
 
       // Criar novas relações
       if (teamIds.length > 0) {
-        await prisma.physiotherapistTeam.createMany({
-          data: teamIds.map((teamId: number) => ({
+        const teamsData = teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
+          if (typeof team === 'number') {
+            return {
+              physiotherapistId: id,
+              shiftTeamId: team,
+              customShiftValue: null
+            };
+          }
+          return {
             physiotherapistId: id,
-            shiftTeamId: teamId
-          }))
+            shiftTeamId: team.teamId,
+            customShiftValue: team.customShiftValue !== undefined && team.customShiftValue !== null 
+              ? Number(team.customShiftValue) 
+              : null
+          };
+        });
+        
+        await prisma.physiotherapistTeam.createMany({
+          data: teamsData
         });
       }
     }

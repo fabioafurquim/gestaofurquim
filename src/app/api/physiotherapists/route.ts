@@ -87,10 +87,19 @@ export async function POST(request: Request) {
         cnpjEmpresa: contractType === 'PJ' ? cnpjEmpresa : null,
         enderecoEmpresa: contractType === 'PJ' ? enderecoEmpresa : null,
         // Criar relações com as equipes selecionadas
+        // teamIds pode ser um array simples [1, 2, 3] ou um array de objetos [{teamId: 1, customShiftValue: 100}, ...]
         teams: teamIds && teamIds.length > 0 ? {
-          create: teamIds.map((teamId: number) => ({
-            shiftTeamId: teamId
-          }))
+          create: teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
+            if (typeof team === 'number') {
+              return { shiftTeamId: team, customShiftValue: null };
+            }
+            return {
+              shiftTeamId: team.teamId,
+              customShiftValue: team.customShiftValue !== undefined && team.customShiftValue !== null 
+                ? Number(team.customShiftValue) 
+                : null
+            };
+          })
         } : undefined,
       },
     });

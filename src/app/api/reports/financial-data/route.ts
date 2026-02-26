@@ -30,6 +30,22 @@ export async function GET(request: NextRequest) {
             orderBy: { date: 'asc' },
         });
 
+        // Buscar todas as relações PhysiotherapistTeam para obter os valores customizados
+        const physiotherapistTeams = await prisma.physiotherapistTeam.findMany({
+            select: {
+                physiotherapistId: true,
+                shiftTeamId: true,
+                customShiftValue: true
+            }
+        });
+
+        // Criar um mapa para acesso rápido: "physioId-teamId" -> customShiftValue
+        const customValueMap = new Map<string, number | null>();
+        for (const pt of physiotherapistTeams) {
+            const key = `${pt.physiotherapistId}-${pt.shiftTeamId}`;
+            customValueMap.set(key, pt.customShiftValue?.toNumber() ?? null);
+        }
+
         // Agrupar dados por fisioterapeuta
         const byPhysio: Record<number, {
             id: number;
@@ -53,7 +69,14 @@ export async function GET(request: NextRequest) {
             
             if (!team || !physio) continue;
 
-            const shiftValue = team.shiftValue?.toNumber() || 0;
+            // Verificar se há valor customizado para este fisioterapeuta nesta equipe
+            const customValueKey = `${physio.id}-${team.id}`;
+            const customValue = customValueMap.get(customValueKey);
+            
+            // Usar valor customizado se existir, senão usar valor padrão da equipe
+            const shiftValue = customValue !== null && customValue !== undefined 
+                ? customValue 
+                : (team.shiftValue?.toNumber() || 0);
             const additionalValue = physio.additionalValue?.toNumber() || 0;
 
             if (!byPhysio[physio.id]) {

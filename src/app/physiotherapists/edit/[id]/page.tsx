@@ -13,8 +13,13 @@ import {
   validateNumericPixKey 
 } from '@/lib/input-masks';
 
+interface TeamAssignment {
+  teamId: number;
+  customShiftValue: string | null;
+}
+
 interface PhysiotherapistWithTeams extends Physiotherapist {
-  teams?: { shiftTeamId: number; shiftTeam: ShiftTeam }[];
+  teams?: { shiftTeamId: number; customShiftValue?: number | null; shiftTeam: ShiftTeam }[];
 }
 
 export default function EditPhysiotherapistPage() {
@@ -24,7 +29,7 @@ export default function EditPhysiotherapistPage() {
 
   const [physio, setPhysio] = useState<PhysiotherapistWithTeams | null>(null);
   const [teams, setTeams] = useState<ShiftTeam[]>([]);
-  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([]);
+  const [teamAssignments, setTeamAssignments] = useState<TeamAssignment[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Handlers para aplicar máscaras
@@ -86,9 +91,12 @@ export default function EditPhysiotherapistPage() {
             additionalValue: data.additionalValue ? applyCurrencyMask((data.additionalValue * 100).toString()) : '',
           };
           setPhysio(formattedData);
-          // Extrair IDs das equipes associadas
+          // Extrair equipes associadas com valores customizados
           if (data.teams) {
-            setSelectedTeamIds(data.teams.map((t: any) => t.shiftTeamId));
+            setTeamAssignments(data.teams.map((t: any) => ({
+              teamId: t.shiftTeamId,
+              customShiftValue: t.customShiftValue ? applyCurrencyMask((t.customShiftValue * 100).toString()) : null
+            })));
           }
         })
         .catch(() => setError('Falha ao carregar dados do fisioterapeuta'));
@@ -97,22 +105,44 @@ export default function EditPhysiotherapistPage() {
 
   const handleTeamChange = (teamId: number, checked: boolean) => {
     if (checked) {
-      setSelectedTeamIds(prev => [...prev, teamId]);
+      setTeamAssignments(prev => [...prev, { teamId, customShiftValue: null }]);
     } else {
-      setSelectedTeamIds(prev => prev.filter(id => id !== teamId));
+      setTeamAssignments(prev => prev.filter(t => t.teamId !== teamId));
     }
+  };
+
+  const handleCustomValueChange = (teamId: number, value: string) => {
+    const maskedValue = applyCurrencyMask(value);
+    setTeamAssignments(prev => prev.map(t => 
+      t.teamId === teamId ? { ...t, customShiftValue: maskedValue || null } : t
+    ));
+  };
+
+  const isTeamSelected = (teamId: number) => {
+    return teamAssignments.some(t => t.teamId === teamId);
+  };
+
+  const getCustomValue = (teamId: number) => {
+    const assignment = teamAssignments.find(t => t.teamId === teamId);
+    return assignment?.customShiftValue || '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!physio) return;
 
-    if (selectedTeamIds.length === 0) {
+    if (teamAssignments.length === 0) {
       setError('Por favor, selecione pelo menos uma equipe.');
       return;
     }
 
     try {
+      // Preparar teamIds com valores customizados
+      const teamIdsWithValues = teamAssignments.map(t => ({
+        teamId: t.teamId,
+        customShiftValue: t.customShiftValue ? removeCurrencyMask(t.customShiftValue) : null
+      }));
+
       const payload: any = {
         name: physio.name,
         email: physio.email,
@@ -126,7 +156,7 @@ export default function EditPhysiotherapistPage() {
         exitDate: physio.exitDate ? new Date(physio.exitDate).toISOString() : null,
         contractType: physio.contractType,
         status: physio.status,
-        hourValue: (physio as any).hourValue ? removeCurrencyMask((physio as any).hourValue) : 0, // Renomeado de shiftValue
+        hourValue: (physio as any).hourValue ? removeCurrencyMask((physio as any).hourValue) : 0,
         additionalValue: (physio as any).additionalValue ? removeCurrencyMask((physio as any).additionalValue) : 0,
         // Novos campos bancários
         banco: (physio as any).banco || null,
@@ -138,8 +168,8 @@ export default function EditPhysiotherapistPage() {
         nomeEmpresa: physio.contractType === 'PJ' ? (physio as any).nomeEmpresa : null,
         cnpjEmpresa: physio.contractType === 'PJ' ? (physio as any).cnpjEmpresa : null,
         enderecoEmpresa: physio.contractType === 'PJ' ? (physio as any).enderecoEmpresa : null,
-        // Equipes selecionadas
-        teamIds: selectedTeamIds,
+        // Equipes selecionadas com valores customizados
+        teamIds: teamIdsWithValues,
       };
 
       const response = await fetch(`/api/physiotherapists/${id}`, {
@@ -354,30 +384,53 @@ export default function EditPhysiotherapistPage() {
           </>
         )}
         <div className="mb-3">
-          <label className="form-label">Equipes *</label>
-          <div className="border rounded p-3" style={{maxHeight: '200px', overflowY: 'auto'}}>
+          <label className="form-label">Equipes e Valores por Plantão *</label>
+          <p className="text-muted small mb-2">
+            Selecione as equipes e defina valores customizados se necessário. Se deixar em branco, será usado o valor padrão da equipe.
+          </p>
+          <div className="border rounded p-3" style={{maxHeight: '400px', overflowY: 'auto'}}>
             {teams.length === 0 ? (
               <p className="text-muted mb-0">Carregando equipes...</p>
             ) : (
               teams.map(team => (
-                <div key={team.id} className="form-check mb-2">
-                  <input 
-                    className="form-check-input" 
-                    type="checkbox" 
-                    id={`team-${team.id}`}
-                    checked={selectedTeamIds.includes(team.id)}
-                    onChange={(e) => handleTeamChange(team.id, e.target.checked)}
-                  />
-                  <label className="form-check-label" htmlFor={`team-${team.id}`}>
-                    {team.name}
-                  </label>
+                <div key={team.id} className="border-bottom pb-2 mb-2">
+                  <div className="form-check">
+                    <input 
+                      className="form-check-input" 
+                      type="checkbox" 
+                      id={`team-${team.id}`}
+                      checked={isTeamSelected(team.id)}
+                      onChange={(e) => handleTeamChange(team.id, e.target.checked)}
+                    />
+                    <label className="form-check-label fw-medium" htmlFor={`team-${team.id}`}>
+                      {team.name}
+                    </label>
+                    <span className="text-muted ms-2 small">
+                      (Valor padrão: R$ {team.shiftValue ? Number(team.shiftValue).toFixed(2) : '0,00'})
+                    </span>
+                  </div>
+                  {isTeamSelected(team.id) && (
+                    <div className="ms-4 mt-2">
+                      <label className="form-label small text-muted">Valor customizado (opcional):</label>
+                      <div className="input-group input-group-sm" style={{maxWidth: '200px'}}>
+                        <span className="input-group-text">R$</span>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          placeholder="Usar padrão"
+                          value={getCustomValue(team.id)}
+                          onChange={(e) => handleCustomValueChange(team.id, e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}
           </div>
-          {selectedTeamIds.length > 0 && (
+          {teamAssignments.length > 0 && (
             <small className="text-muted">
-              {selectedTeamIds.length} equipe(s) selecionada(s)
+              {teamAssignments.length} equipe(s) selecionada(s)
             </small>
           )}
         </div>
