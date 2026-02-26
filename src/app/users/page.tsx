@@ -395,7 +395,7 @@ export default function UsersPage() {
                     >
                       Resetar Senha
                     </button>
-                    {session?.user?.id?.toString() !== user.id && (
+                    {String(session?.user?.id) !== user.id && (
                       <button
                         onClick={() => handleDeleteUser(user.id, user.name)}
                         className="inline-flex items-center px-3 py-1 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"

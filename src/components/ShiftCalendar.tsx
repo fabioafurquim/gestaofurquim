@@ -5,16 +5,32 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
 import { ShiftTeam, ShiftPeriod } from '@prisma/client';
 import ptBrLocale from '@fullcalendar/core/locales/pt-br';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 // Removido import getCurrentUser - agora usamos API route
 
 const periodColor: Record<ShiftPeriod, string> = {
-  MORNING: '#0d6efd', // azul
-  INTERMEDIATE: '#6f42c1', // roxo sutil para intermediário
-  AFTERNOON: '#198754', // verde
-  NIGHT: '#dc3545', // vermelho
+  MORNING: '#3B82F6', // azul moderno
+  INTERMEDIATE: '#8B5CF6', // violeta
+  AFTERNOON: '#10B981', // emerald
+  NIGHT: '#EF4444', // vermelho
 };
 
 const periodOrderMap: Record<ShiftPeriod, number> = {
@@ -136,7 +152,7 @@ export default function ShiftCalendar() {
 
   const handleDateClick = (arg: any) => {
     if (!viewingTeamId) {
-      alert('Por favor, selecione uma equipe antes de adicionar um plantão.');
+      toast.warning('Por favor, selecione uma equipe antes de adicionar um plantão.');
       return;
     }
     setSelectedDate(arg.dateStr);
@@ -161,7 +177,7 @@ export default function ShiftCalendar() {
 
   const handleSaveShift = async () => {
     if (!selectedPhysioId || !selectedDate || !viewingTeamId) {
-      alert("Por favor, preencha todos os campos.");
+      toast.warning('Por favor, preencha todos os campos.');
       return;
     }
     try {
@@ -181,10 +197,10 @@ export default function ShiftCalendar() {
       }
       await fetchShifts(viewingTeamId);
       handleCloseModal();
-      alert(json.message || 'Plantão criado com sucesso');
+      toast.success(json.message || 'Plantão criado com sucesso');
     } catch (error: any) {
       console.error(error);
-      alert(error.message);
+      toast.error(error.message);
     }
   };
 
@@ -203,10 +219,10 @@ export default function ShiftCalendar() {
       if (!response.ok) throw new Error(json.error || 'Falha ao atualizar o plantão');
       await fetchShifts(viewingTeamId);
       handleCloseEditModal();
-      alert(json.message || 'Plantão atualizado com sucesso');
+      toast.success(json.message || 'Plantão atualizado com sucesso');
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Não foi possível atualizar o plantão.');
+      toast.error(error.message || 'Não foi possível atualizar o plantão.');
     }
   };
 
@@ -221,10 +237,10 @@ export default function ShiftCalendar() {
         if (!response.ok) throw new Error(json.error || 'Falha ao excluir o plantão');
         await fetchShifts(viewingTeamId);
         handleCloseEditModal();
-        alert(json.message || 'Plantão excluído com sucesso');
+        toast.success(json.message || 'Plantão excluído com sucesso');
       } catch (error: any) {
         console.error(error);
-        alert(error.message || 'Não foi possível excluir o plantão.');
+        toast.error(error.message || 'Não foi possível excluir o plantão.');
       }
     }
   };
@@ -235,158 +251,221 @@ export default function ShiftCalendar() {
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
-        <div className="spinner-border" role="status">
-          <span className="visually-hidden">Carregando...</span>
-        </div>
+      <div className="flex justify-center items-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
+  const hasIntermediateSlots = () => {
+    const team = teams.find(t => t.id === Number(viewingTeamId));
+    return team && (team as any).intermediateSlots > 0;
+  };
+
   return (
-    <div>
-      <Row className="mb-4 align-items-center">
-        <Col md={4}>
-          <Form.Group>
-            <Form.Label className="fw-bold">Selecione a Equipe</Form.Label>
-            <Form.Select 
-              value={viewingTeamId} 
-              onChange={(e) => setViewingTeamId(e.target.value)}
-              disabled={currentUser?.role === 'USER'}
-            >
-              <option value="">-- Visualizar Equipe --</option>
+    <div className="space-y-6">
+      {/* Seletor de Equipe */}
+      <div className="flex items-center gap-4">
+        <div className="w-full max-w-xs">
+          <Label className="font-semibold mb-2 block">Selecione a Equipe</Label>
+          <Select
+            value={viewingTeamId}
+            onValueChange={setViewingTeamId}
+            disabled={currentUser?.role === 'USER'}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="-- Visualizar Equipe --" />
+            </SelectTrigger>
+            <SelectContent>
               {teams.map(team => (
-                <option key={team.id} value={team.id}>{team.name}</option>
+                <SelectItem key={team.id} value={team.id.toString()}>
+                  {team.name}
+                </SelectItem>
               ))}
-            </Form.Select>
-            {currentUser?.role === 'USER' && (
-              <Form.Text className="text-muted">
-                Você está visualizando sua equipe
-              </Form.Text>
-            )}
-          </Form.Group>
-        </Col>
-      </Row>
+            </SelectContent>
+          </Select>
+          {currentUser?.role === 'USER' && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Você está visualizando sua equipe
+            </p>
+          )}
+        </div>
+      </div>
 
-      <FullCalendar
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="dayGridMonth"
-        weekends={true}
-        events={events}
-        locale={ptBrLocale}
-        dateClick={handleDateClick}
-        eventClick={handleEventClick}
-        editable={true}
-        droppable={true}
-        eventDrop={handleEventDrop}
-        eventReceive={handleEventReceive}
-        eventRemove={handleEventRemove}
-        eventOrder={(a: any, b: any) => {
-          const ao = a?.extendedProps?.periodOrder ?? 999;
-          const bo = b?.extendedProps?.periodOrder ?? 999;
-          if (ao !== bo) return ao - bo;
-          return (a.title || '').localeCompare(b.title || '');
-        }}
-      />
+      {/* Calendário */}
+      <div className="bg-white rounded-lg border p-4">
+        <FullCalendar
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          weekends={true}
+          events={events}
+          locale={ptBrLocale}
+          dateClick={handleDateClick}
+          eventClick={handleEventClick}
+          editable={true}
+          droppable={true}
+          eventDrop={handleEventDrop}
+          eventReceive={handleEventReceive}
+          eventRemove={handleEventRemove}
+          eventOrder={(a: any, b: any) => {
+            const ao = a?.extendedProps?.periodOrder ?? 999;
+            const bo = b?.extendedProps?.periodOrder ?? 999;
+            if (ao !== bo) return ao - bo;
+            return (a.title || '').localeCompare(b.title || '');
+          }}
+        />
+      </div>
 
-      {/* Add Shift Modal */}
-      <Modal show={showAddModal} onHide={handleCloseModal} centered>
-        <Modal.Header closeButton>
-          <Modal.Title>Adicionar Plantão - {selectedDate}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form>
-            <Form.Group className="mb-3">
-              <Form.Label>Período</Form.Label>
-              <Form.Select value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value as ShiftPeriod)}>
-                <option value={ShiftPeriod.MORNING}>Manhã</option>
-                {(() => {
-                  const team = teams.find(t => t.id === Number(viewingTeamId));
-                  if (team && (team as any).intermediateSlots > 0) {
-                    return <option value={ShiftPeriod.INTERMEDIATE}>Intermediário</option>;
-                  }
-                  return null;
-                })()}
-                <option value={ShiftPeriod.AFTERNOON}>Tarde</option>
-                <option value={ShiftPeriod.NIGHT}>Noite</option>
-              </Form.Select>
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Fisioterapeuta</Form.Label>
-              <Form.Select 
+      {/* Legenda */}
+      <div className="flex flex-wrap gap-4 text-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.MORNING }}></div>
+          <span>Manhã</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.INTERMEDIATE }}></div>
+          <span>Intermediário</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.AFTERNOON }}></div>
+          <span>Tarde</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.NIGHT }}></div>
+          <span>Noite</span>
+        </div>
+      </div>
+
+      {/* Modal Adicionar Plantão */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adicionar Plantão - {selectedDate}</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Período</Label>
+              <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">Manhã</SelectItem>
+                  {hasIntermediateSlots() && (
+                    <SelectItem value="INTERMEDIATE">Intermediário</SelectItem>
+                  )}
+                  <SelectItem value="AFTERNOON">Tarde</SelectItem>
+                  <SelectItem value="NIGHT">Noite</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Fisioterapeuta</Label>
+              <Select 
                 value={selectedPhysioId} 
-                onChange={(e) => setSelectedPhysioId(e.target.value)}
+                onValueChange={setSelectedPhysioId}
                 disabled={currentUser?.role === 'USER'}
               >
-                <option value="">Selecione um fisioterapeuta</option>
-                {availablePhysios.map(physio => (
-                  <option key={physio.id} value={physio.id}>{physio.name}</option>
-                ))}
-              </Form.Select>
-              {currentUser?.role === 'USER' && (
-                <Form.Text className="text-muted">
-                  Você só pode criar plantões para si mesmo
-                </Form.Text>
-              )}
-            </Form.Group>
-          </Form>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleCloseModal}>Fechar</Button>
-          <Button variant="primary" onClick={handleSaveShift}>Salvar Plantão</Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* Edit Shift Modal */}
-      {selectedEvent && (
-        <Modal show={showEditModal} onHide={handleCloseEditModal} centered>
-          <Modal.Header closeButton>
-            <Modal.Title>Editar Plantão - {new Date(selectedEvent.start).toLocaleDateString()}</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Form>
-              <Form.Group className="mb-3">
-                <Form.Label>Período</Form.Label>
-                <Form.Select value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value as ShiftPeriod)}>
-                  <option value={ShiftPeriod.MORNING}>Manhã</option>
-                  {(() => {
-                    const team = teams.find(t => t.id === Number(viewingTeamId));
-                    if (team && (team as any).intermediateSlots > 0) {
-                      return <option value={ShiftPeriod.INTERMEDIATE}>Intermediário</option>;
-                    }
-                    return null;
-                  })()}
-                  <option value={ShiftPeriod.AFTERNOON}>Tarde</option>
-                  <option value={ShiftPeriod.NIGHT}>Noite</option>
-                </Form.Select>
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>Fisioterapeuta</Form.Label>
-                <Form.Select 
-                  value={selectedPhysioId} 
-                  onChange={(e) => setSelectedPhysioId(e.target.value)}
-                  disabled={currentUser?.role === 'USER'}
-                >
-                  <option value="">Selecione um fisioterapeuta</option>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um fisioterapeuta" />
+                </SelectTrigger>
+                <SelectContent>
                   {availablePhysios.map(physio => (
-                    <option key={physio.id} value={physio.id}>{physio.name}</option>
+                    <SelectItem key={physio.id} value={physio.id.toString()}>
+                      {physio.name}
+                    </SelectItem>
                   ))}
-                </Form.Select>
-                {currentUser?.role === 'USER' && (
-                  <Form.Text className="text-muted">
-                    Você só pode editar seus próprios plantões
-                  </Form.Text>
-                )}
-              </Form.Group>
-            </Form>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="danger" onClick={handleDeleteShift}>Excluir</Button>
-            <Button variant="secondary" onClick={handleCloseEditModal}>Fechar</Button>
-            <Button variant="primary" onClick={handleUpdateShift}>Salvar Alterações</Button>
-          </Modal.Footer>
-        </Modal>
-      )}
+                </SelectContent>
+              </Select>
+              {currentUser?.role === 'USER' && (
+                <p className="text-sm text-muted-foreground">
+                  Você só pode criar plantões para si mesmo
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseModal}>
+              Fechar
+            </Button>
+            <Button onClick={handleSaveShift}>
+              Salvar Plantão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Editar Plantão */}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Editar Plantão - {selectedEvent ? new Date(selectedEvent.start).toLocaleDateString() : ''}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Período</Label>
+              <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">Manhã</SelectItem>
+                  {hasIntermediateSlots() && (
+                    <SelectItem value="INTERMEDIATE">Intermediário</SelectItem>
+                  )}
+                  <SelectItem value="AFTERNOON">Tarde</SelectItem>
+                  <SelectItem value="NIGHT">Noite</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Fisioterapeuta</Label>
+              <Select 
+                value={selectedPhysioId} 
+                onValueChange={setSelectedPhysioId}
+                disabled={currentUser?.role === 'USER'}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um fisioterapeuta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availablePhysios.map(physio => (
+                    <SelectItem key={physio.id} value={physio.id.toString()}>
+                      {physio.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {currentUser?.role === 'USER' && (
+                <p className="text-sm text-muted-foreground">
+                  Você só pode editar seus próprios plantões
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-between sm:justify-between">
+            <Button variant="destructive" onClick={handleDeleteShift}>
+              Excluir
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleCloseEditModal}>
+                Fechar
+              </Button>
+              <Button onClick={handleUpdateShift}>
+                Salvar Alterações
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
