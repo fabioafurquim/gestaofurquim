@@ -57,3 +57,7 @@ google-token.json
 # Build archives (não commitar)
 *.tar.gz
 *.zip
+
+# Docker Compose (não usar em produção - Coolify gerencia containers)
+docker-compose.yml
+docker-compose.yaml
