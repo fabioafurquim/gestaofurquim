@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateUser, generateToken } from '@/lib/auth';
-import { cookies } from 'next/headers';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -44,22 +43,10 @@ export async function POST(request: NextRequest) {
       mustChangePassword: user.mustChangePassword,
     });
 
-    // Define o cookie de autenticação
-    const cookieStore = await cookies();
-    const isProduction = process.env.NODE_ENV === 'production';
-    cookieStore.set('auth-token', token, {
-      httpOnly: true,
-      secure: isProduction, // true em produção (HTTPS), false em desenvolvimento
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
-    });
-    
-    console.log('Cookie set successfully');
-
-    return NextResponse.json({
+    // Cria a resposta
+    const response = NextResponse.json({
       message: 'Login realizado com sucesso',
-      token, // Retornando token no body também
+      token,
       user: {
         id: user.id,
         name: user.name,
@@ -70,6 +57,20 @@ export async function POST(request: NextRequest) {
         mustChangePassword: user.mustChangePassword,
       },
     });
+
+    // Define o cookie de autenticação diretamente na resposta
+    const isProduction = process.env.NODE_ENV === 'production';
+    response.cookies.set('auth-token', token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7, // 7 dias
+    });
+    
+    console.log('Cookie set successfully, isProduction:', isProduction);
+
+    return response;
   } catch (error) {
     console.error('Erro no login:', error);
     
