@@ -53,6 +53,7 @@ export default function ShiftCalendar() {
   const [selectedPhysioId, setSelectedPhysioId] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -105,20 +106,26 @@ export default function ShiftCalendar() {
     try {
       const response = await fetch(`/api/shifts?teamId=${teamId}`);
       const shifts = await response.json();
-      const formattedEvents = shifts.map((shift: any) => ({
-        id: shift.id.toString(),
-        title: shift.physiotherapist.name,
-        start: shift.date,
-        allDay: true,
-        backgroundColor: periodColor[shift.period as ShiftPeriod],
-        borderColor: periodColor[shift.period as ShiftPeriod],
-        extendedProps: {
-          physioId: shift.physiotherapistId,
-          teamId: shift.shiftTeamId,
-          period: shift.period,
-          periodOrder: periodOrderMap[shift.period as ShiftPeriod],
-        },
-      }));
+      const formattedEvents = shifts.map((shift: any) => {
+        // Normalizar a data para formato YYYY-MM-DD para evitar problemas de timezone
+        const dateObj = new Date(shift.date);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        
+        return {
+          id: shift.id.toString(),
+          title: shift.physiotherapist.name,
+          start: dateStr,
+          allDay: true,
+          backgroundColor: periodColor[shift.period as ShiftPeriod],
+          borderColor: periodColor[shift.period as ShiftPeriod],
+          extendedProps: {
+            physioId: shift.physiotherapistId,
+            teamId: shift.shiftTeamId,
+            period: shift.period,
+            periodOrder: periodOrderMap[shift.period as ShiftPeriod],
+          },
+        };
+      });
       setEvents(formattedEvents);
     } catch (error) {
       console.error("Falha ao buscar plantões:", error);
@@ -245,9 +252,83 @@ export default function ShiftCalendar() {
     }
   };
 
-  const handleEventDrop = (dropInfo: any) => console.log('Event dropped:', dropInfo);
+  const handleEventDrop = async (dropInfo: any) => {
+    const { event, revert } = dropInfo;
+    const shiftId = event.id;
+    const newDate = event.startStr;
+    
+    console.log('Drag and drop - salvando:', { shiftId, newDate, physioId: event.extendedProps.physioId, period: event.extendedProps.period });
+    
+    try {
+      const response = await fetch(`/api/shifts/${shiftId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: newDate,
+          physiotherapistId: event.extendedProps.physioId,
+          period: event.extendedProps.period,
+        }),
+      });
+      
+      const json = await response.json();
+      console.log('Resposta da API:', json);
+      
+      if (!response.ok) {
+        revert();
+        toast.error(json.error || 'Falha ao mover o plantão');
+      } else {
+        toast.success('Plantão movido com sucesso');
+        // Recarregar os plantões do servidor para garantir sincronização
+        await fetchShifts(viewingTeamId);
+      }
+    } catch (error: any) {
+      console.error('Erro no drag and drop:', error);
+      revert();
+      toast.error('Erro ao mover o plantão');
+    }
+  };
+  
   const handleEventReceive = (info: any) => console.log('Event received:', info);
   const handleEventRemove = (info: any) => console.log('Event removed:', info);
+
+  // Calcular estatísticas dos eventos filtrados pelo mês atual
+  const stats = useMemo(() => {
+    const counts = { MORNING: 0, INTERMEDIATE: 0, AFTERNOON: 0, NIGHT: 0, total: 0 };
+    const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    
+    events.forEach(e => {
+      const eventDate = new Date(e.start);
+      // Filtrar apenas eventos do mês atual
+      if (eventDate >= monthStart && eventDate <= monthEnd) {
+        const period = e.extendedProps?.period as ShiftPeriod;
+        if (period && counts[period] !== undefined) {
+          counts[period]++;
+          counts.total++;
+        }
+      }
+    });
+    return counts;
+  }, [events, currentMonth]);
+
+  // Nome do mês atual para exibição
+  const currentMonthName = useMemo(() => {
+    return currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }, [currentMonth]);
+
+  // Handler para quando o calendário muda de mês
+  const handleDatesSet = (dateInfo: any) => {
+    // Pegar o meio do range visível para determinar o mês
+    const start = new Date(dateInfo.start);
+    const end = new Date(dateInfo.end);
+    const middle = new Date((start.getTime() + end.getTime()) / 2);
+    setCurrentMonth(middle);
+  };
+
+  const hasIntermediateSlots = () => {
+    const team = teams.find(t => t.id === Number(viewingTeamId));
+    return team && (team as any).intermediateSlots > 0;
+  };
 
   if (loading) {
     return (
@@ -257,82 +338,130 @@ export default function ShiftCalendar() {
     );
   }
 
-  const hasIntermediateSlots = () => {
-    const team = teams.find(t => t.id === Number(viewingTeamId));
-    return team && (team as any).intermediateSlots > 0;
-  };
-
   return (
     <div className="space-y-6">
-      {/* Seletor de Equipe */}
-      <div className="flex items-center gap-4">
-        <div className="w-full max-w-xs">
-          <Label className="font-semibold mb-2 block">Selecione a Equipe</Label>
-          <Select
-            value={viewingTeamId}
-            onValueChange={setViewingTeamId}
-            disabled={currentUser?.role === 'USER'}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="-- Visualizar Equipe --" />
-            </SelectTrigger>
-            <SelectContent>
-              {teams.map(team => (
-                <SelectItem key={team.id} value={team.id.toString()}>
-                  {team.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {currentUser?.role === 'USER' && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Você está visualizando sua equipe
-            </p>
+      {/* Header com seletor e estatísticas */}
+      <div className="bg-white rounded-xl border shadow-sm p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          {/* Seletor de Equipe */}
+          <div className="flex-1 max-w-sm">
+            <Label className="text-sm font-medium text-gray-700 mb-2 block">
+              Equipe
+            </Label>
+            <Select
+              value={viewingTeamId}
+              onValueChange={setViewingTeamId}
+              disabled={currentUser?.role === 'USER'}
+            >
+              <SelectTrigger className="w-full h-11 bg-gray-50 border-gray-200">
+                <SelectValue placeholder="Selecione uma equipe" />
+              </SelectTrigger>
+              <SelectContent>
+                {teams.map(team => (
+                  <SelectItem key={team.id} value={team.id.toString()}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {currentUser?.role === 'USER' && (
+              <p className="text-xs text-gray-500 mt-1.5">
+                Visualizando sua equipe
+              </p>
+            )}
+          </div>
+
+          {/* Resumo do mês */}
+          {viewingTeamId && (
+            <div className="flex flex-col items-end gap-2">
+              <p className="text-xs text-gray-500 capitalize">
+                Plantões em <span className="font-medium">{currentMonthName}</span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-md" title="Plantões no período da manhã">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  <span className="text-xs font-medium text-blue-700">{stats.MORNING}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 rounded-md" title="Plantões no período intermediário">
+                  <div className="w-2 h-2 rounded-full bg-violet-500"></div>
+                  <span className="text-xs font-medium text-violet-700">{stats.INTERMEDIATE}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-md" title="Plantões no período da tarde">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span className="text-xs font-medium text-emerald-700">{stats.AFTERNOON}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 rounded-md" title="Plantões no período da noite">
+                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                  <span className="text-xs font-medium text-red-700">{stats.NIGHT}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-100 rounded-md" title="Total de plantões no mês">
+                  <span className="text-xs font-bold text-indigo-700">{stats.total} plantões</span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
       {/* Calendário */}
-      <div className="bg-white rounded-lg border p-4">
-        <FullCalendar
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
-          weekends={true}
-          events={events}
-          locale={ptBrLocale}
-          dateClick={handleDateClick}
-          eventClick={handleEventClick}
-          editable={true}
-          droppable={true}
-          eventDrop={handleEventDrop}
-          eventReceive={handleEventReceive}
-          eventRemove={handleEventRemove}
-          eventOrder={(a: any, b: any) => {
-            const ao = a?.extendedProps?.periodOrder ?? 999;
-            const bo = b?.extendedProps?.periodOrder ?? 999;
-            if (ao !== bo) return ao - bo;
-            return (a.title || '').localeCompare(b.title || '');
-          }}
-        />
-      </div>
-
-      {/* Legenda */}
-      <div className="flex flex-wrap gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.MORNING }}></div>
-          <span>Manhã</span>
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="p-4 md:p-6">
+          <FullCalendar
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView="dayGridMonth"
+            weekends={true}
+            events={events}
+            locale={ptBrLocale}
+            dateClick={handleDateClick}
+            eventClick={handleEventClick}
+            editable={true}
+            droppable={true}
+            eventDrop={handleEventDrop}
+            eventReceive={handleEventReceive}
+            eventRemove={handleEventRemove}
+            datesSet={handleDatesSet}
+            headerToolbar={{
+              left: 'prev,next today',
+              center: 'title',
+              right: 'dayGridMonth,timeGridWeek'
+            }}
+            buttonText={{
+              today: 'Hoje',
+              month: 'Mês',
+              week: 'Semana'
+            }}
+            dayMaxEvents={4}
+            moreLinkText={(num) => `+${num} mais`}
+            eventOrder={(a: any, b: any) => {
+              const ao = a?.extendedProps?.periodOrder ?? 999;
+              const bo = b?.extendedProps?.periodOrder ?? 999;
+              if (ao !== bo) return ao - bo;
+              return (a.title || '').localeCompare(b.title || '');
+            }}
+            height="auto"
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.INTERMEDIATE }}></div>
-          <span>Intermediário</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.AFTERNOON }}></div>
-          <span>Tarde</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: periodColor.NIGHT }}></div>
-          <span>Noite</span>
+        
+        {/* Legenda no rodapé */}
+        <div className="border-t bg-gray-50 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.MORNING }}></div>
+              <span className="text-gray-600">Manhã</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.INTERMEDIATE }}></div>
+              <span className="text-gray-600">Intermediário</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.AFTERNOON }}></div>
+              <span className="text-gray-600">Tarde</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.NIGHT }}></div>
+              <span className="text-gray-600">Noite</span>
+            </div>
+          </div>
         </div>
       </div>
 

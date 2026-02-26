@@ -31,19 +31,15 @@ export async function GET(request: NextRequest) {
         });
 
         // Buscar todas as relações PhysiotherapistTeam para obter os valores customizados
-        const physiotherapistTeams = await prisma.physiotherapistTeam.findMany({
-            select: {
-                physiotherapistId: true,
-                shiftTeamId: true,
-                customShiftValue: true
-            }
-        });
+        const physiotherapistTeams = await prisma.physiotherapistTeam.findMany();
 
         // Criar um mapa para acesso rápido: "physioId-teamId" -> customShiftValue
         const customValueMap = new Map<string, number | null>();
         for (const pt of physiotherapistTeams) {
             const key = `${pt.physiotherapistId}-${pt.shiftTeamId}`;
-            customValueMap.set(key, pt.customShiftValue?.toNumber() ?? null);
+            // Usar any para evitar erro de tipo enquanto Prisma não é regenerado
+            const customValue = (pt as any).customShiftValue;
+            customValueMap.set(key, customValue ? Number(customValue) : null);
         }
 
         // Agrupar dados por fisioterapeuta
@@ -126,6 +122,7 @@ export async function GET(request: NextRequest) {
             intermediate: 0,
             afternoon: 0,
             night: 0,
+            shiftValue: 0,
             totalShiftValue: 0,
             additionalValue: 0
         };
@@ -136,6 +133,7 @@ export async function GET(request: NextRequest) {
                 totals.intermediate += team.periods.INTERMEDIATE;
                 totals.afternoon += team.periods.AFTERNOON;
                 totals.night += team.periods.NIGHT;
+                totals.shiftValue += team.totalValue;
                 totals.totalShiftValue += team.totalValue;
             });
             totals.additionalValue += physio.additionalValue;

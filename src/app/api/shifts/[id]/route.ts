@@ -16,16 +16,22 @@ export async function PUT(
     if (error) return error;
 
     const data = await request.json();
-    const { period, physiotherapistId } = data as { period: ShiftPeriod; physiotherapistId: number | string };
+    const { period, physiotherapistId, date } = data as { period: ShiftPeriod; physiotherapistId: number | string; date?: string };
+
+    console.log('=== PUT /api/shifts/[id] ===');
+    console.log('ID:', id);
+    console.log('Dados recebidos:', { period, physiotherapistId, date });
 
     if (!period || !physiotherapistId) {
       return NextResponse.json({ error: 'Período e Fisioterapeuta são obrigatórios' }, { status: 400 });
     }
 
-    const existing = await prisma.shift.findUnique({ where: { id }, select: { date: true, physiotherapistId: true } });
+    const existing = await prisma.shift.findUnique({ where: { id }, select: { date: true, physiotherapistId: true, shiftTeamId: true } });
     if (!existing) {
       return NextResponse.json({ error: 'Plantão não encontrado' }, { status: 404 });
     }
+    
+    console.log('Plantão existente:', existing);
 
     // Validar se usuário USER só pode editar seus próprios plantões
     if (currentUser.role === 'USER') {
@@ -39,12 +45,25 @@ export async function PUT(
       }
     }
 
+    // Determinar a data a ser usada (nova ou existente)
+    // Se a data vier como string YYYY-MM-DD, precisamos criar a data corretamente
+    let targetDate: Date;
+    if (date) {
+      // Criar data no formato UTC para evitar problemas de timezone
+      const [year, month, day] = date.split('-').map(Number);
+      targetDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    } else {
+      targetDate = existing.date;
+    }
+    
+    console.log('Data alvo:', targetDate, 'Data original:', date);
+
     // Checar duplicidade na nova combinação
     const duplicate = await prisma.shift.findFirst({
       where: {
         id: { not: id },
         physiotherapistId: Number(physiotherapistId),
-        date: existing.date,
+        date: targetDate,
         period: period,
       },
       select: { id: true },
@@ -57,9 +76,13 @@ export async function PUT(
       where: { id },
       data: {
         period,
+        date: targetDate,
         physiotherapist: { connect: { id: Number(physiotherapistId) } },
       },
     });
+    
+    console.log('Plantão atualizado com sucesso:', updatedShift);
+    
     return NextResponse.json({ message: 'Plantão atualizado com sucesso', shift: updatedShift });
   } catch (error) {
     console.error(`Erro ao atualizar plantão ${id}:`, error);

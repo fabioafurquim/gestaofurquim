@@ -311,7 +311,7 @@ export default function FinancialReportClient({
                                                         Manhã
                                                     </th>
                                                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                        Intermediário
+                                                        Interm.
                                                     </th>
                                                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                         Tarde
@@ -319,34 +319,49 @@ export default function FinancialReportClient({
                                                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                         Noite
                                                     </th>
+                                                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Total
+                                                    </th>
                                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                        Valor Total
+                                                        Valor Unit.
+                                                    </th>
+                                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Subtotal
                                                     </th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white divide-y divide-gray-200">
-                                                {teamBreakdownArray.map((team) => (
+                                                {teamBreakdownArray.map((team) => {
+                                                    const totalShiftsTeam = team.periods.MORNING + team.periods.INTERMEDIATE + team.periods.AFTERNOON + team.periods.NIGHT;
+                                                    return (
                                                     <tr key={team.teamId} className="hover:bg-gray-50">
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                             {team.teamName}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                                            {team.periods.MORNING}
+                                                            {team.periods.MORNING || '-'}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                                            {team.periods.INTERMEDIATE}
+                                                            {team.periods.INTERMEDIATE || '-'}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                                            {team.periods.AFTERNOON}
+                                                            {team.periods.AFTERNOON || '-'}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                                            {team.periods.NIGHT}
+                                                            {team.periods.NIGHT || '-'}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 text-center">
+                                                            {totalShiftsTeam}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                                                            R$ {team.shiftValue.toFixed(2)}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
                                                             R$ {team.totalValue.toFixed(2)}
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                             <tfoot className="bg-gray-50">
                                                 <tr>
@@ -354,16 +369,22 @@ export default function FinancialReportClient({
                                                         Subtotal Plantões
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-center">
-                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.MORNING, 0)}
+                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.MORNING, 0) || '-'}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-center">
-                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.INTERMEDIATE, 0)}
+                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.INTERMEDIATE, 0) || '-'}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-center">
-                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.AFTERNOON, 0)}
+                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.AFTERNOON, 0) || '-'}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-center">
-                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.NIGHT, 0)}
+                                                        {Object.values(physio.teamBreakdown).reduce((sum, team) => sum + team.periods.NIGHT, 0) || '-'}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-center">
+                                                        {physio.totalShifts}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                                                        -
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
                                                         R$ {physio.totalValue.toFixed(2)}
@@ -371,7 +392,7 @@ export default function FinancialReportClient({
                                                 </tr>
                                                 {physio.additionalValue > 0 && (
                                                     <tr>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700" colSpan={5}>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700" colSpan={7}>
                                                             Valor Adicional
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700 text-right">
@@ -379,11 +400,11 @@ export default function FinancialReportClient({
                                                         </td>
                                                     </tr>
                                                 )}
-                                                <tr>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-700" colSpan={5}>
+                                                <tr className="bg-indigo-50">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-700" colSpan={7}>
                                                         TOTAL {physio.name.toUpperCase()}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-700 text-right">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-700 text-right">
                                                         R$ {totalValue.toFixed(2)}
                                                     </td>
                                                 </tr>
