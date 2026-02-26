@@ -23,8 +23,11 @@ scp backup_2026-02-26.json root@187.77.57.122:/root/
 ### 3️⃣ Importar em Produção
 
 ```bash
-ssh root@187.77.57.122
-bash /root/import-data-production.sh /root/backup_2026-02-26.json
+# Transferir script de importação
+scp import-to-production.js root@187.77.57.122:/tmp/
+
+# Executar importação
+ssh root@187.77.57.122 "APP_CONTAINER=\$(docker ps -q --filter 'name=g48wk8goo88g8k8cw4cs484g') && docker cp /tmp/import-to-production.js \$APP_CONTAINER:/app/ && docker cp /root/backup_2026-02-26.json \$APP_CONTAINER:/app/backup.json && docker exec \$APP_CONTAINER node /app/import-to-production.js"
 ```
 
 **⚠️ Isso vai substituir TODOS os dados em produção!**
