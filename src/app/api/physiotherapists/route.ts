@@ -91,14 +91,18 @@ export async function POST(request: Request) {
         teams: teamIds && teamIds.length > 0 ? {
           create: teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
             if (typeof team === 'number') {
-              return { shiftTeamId: team, customShiftValue: null };
+              return { shiftTeamId: team };
             }
-            return {
-              shiftTeamId: team.teamId,
-              customShiftValue: team.customShiftValue !== undefined && team.customShiftValue !== null 
-                ? Number(team.customShiftValue) 
-                : null
-            };
+            // Só incluir customShiftValue se o campo existir no schema
+            const teamData: any = { shiftTeamId: team.teamId };
+            if (team.customShiftValue !== undefined && team.customShiftValue !== null) {
+              try {
+                teamData.customShiftValue = Number(team.customShiftValue);
+              } catch (e) {
+                // Ignorar se customShiftValue não estiver disponível no schema
+              }
+            }
+            return teamData;
           })
         } : undefined,
       },

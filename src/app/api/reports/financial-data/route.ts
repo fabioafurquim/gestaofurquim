@@ -31,15 +31,18 @@ export async function GET(request: NextRequest) {
         });
 
         // Buscar todas as relações PhysiotherapistTeam para obter os valores customizados
-        const physiotherapistTeams = await prisma.physiotherapistTeam.findMany();
-
-        // Criar um mapa para acesso rápido: "physioId-teamId" -> customShiftValue
+        // Usar try-catch para compatibilidade com bancos que ainda não têm customShiftValue
         const customValueMap = new Map<string, number | null>();
-        for (const pt of physiotherapistTeams) {
-            const key = `${pt.physiotherapistId}-${pt.shiftTeamId}`;
-            // Usar any para evitar erro de tipo enquanto Prisma não é regenerado
-            const customValue = (pt as any).customShiftValue;
-            customValueMap.set(key, customValue ? Number(customValue) : null);
+        try {
+            const physiotherapistTeams = await prisma.physiotherapistTeam.findMany();
+            for (const pt of physiotherapistTeams) {
+                const key = `${pt.physiotherapistId}-${pt.shiftTeamId}`;
+                // Usar any para evitar erro de tipo enquanto Prisma não é regenerado
+                const customValue = (pt as any).customShiftValue;
+                customValueMap.set(key, customValue ? Number(customValue) : null);
+            }
+        } catch (error) {
+            console.log('customShiftValue não disponível no banco, usando valores padrão das equipes');
         }
 
         // Agrupar dados por fisioterapeuta

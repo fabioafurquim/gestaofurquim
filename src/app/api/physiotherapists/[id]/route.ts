@@ -117,17 +117,22 @@ export async function PUT(
           if (typeof team === 'number') {
             return {
               physiotherapistId: id,
-              shiftTeamId: team,
-              customShiftValue: null
+              shiftTeamId: team
             };
           }
-          return {
+          // Só incluir customShiftValue se o campo existir no schema
+          const teamData: any = {
             physiotherapistId: id,
-            shiftTeamId: team.teamId,
-            customShiftValue: team.customShiftValue !== undefined && team.customShiftValue !== null 
-              ? Number(team.customShiftValue) 
-              : null
+            shiftTeamId: team.teamId
           };
+          if (team.customShiftValue !== undefined && team.customShiftValue !== null) {
+            try {
+              teamData.customShiftValue = Number(team.customShiftValue);
+            } catch (e) {
+              // Ignorar se customShiftValue não estiver disponível no schema
+            }
+          }
+          return teamData;
         });
         
         await prisma.physiotherapistTeam.createMany({
