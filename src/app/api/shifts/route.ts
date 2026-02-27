@@ -1,6 +1,5 @@
 import { ShiftPeriod } from '@prisma/client';
 import { NextResponse, NextRequest } from 'next/server';
-import { toZonedTime } from 'date-fns-tz';
 import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import { isWeekend, isHoliday } from '@/lib/date-utils';
@@ -87,8 +86,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Fisioterapeuta inválido' }, { status: 400 });
     }
 
-    const timeZone = 'America/Sao_Paulo';
-    const zonedDate = toZonedTime(date, timeZone);
+    // Criar data no formato UTC para evitar problemas de timezone
+    // A data vem como string YYYY-MM-DD do frontend
+    const [year, month, day] = date.split('-').map(Number);
+    const zonedDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 
     if (physio.status === 'INACTIVE' || (physio.exitDate && physio.exitDate <= zonedDate)) {
       return NextResponse.json({ error: 'Fisioterapeuta indisponível (inativo ou desligado para a data)' }, { status: 400 });
