@@ -57,6 +57,7 @@ export default function ShiftCalendar() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [isMobileView, setIsMobileView] = useState(false);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -104,6 +105,18 @@ export default function ShiftCalendar() {
     }
     fetchShifts(viewingTeamId);
   }, [viewingTeamId]);
+
+  // Detectar tamanho da tela para alternar vista mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const fetchShifts = async (teamId: string) => {
     try {
@@ -357,6 +370,47 @@ export default function ShiftCalendar() {
     };
   }, [events, currentMonth, stats.total]);
 
+  // Calcular vagas disponíveis por data e período
+  const availableSlots = useMemo(() => {
+    if (!viewingTeamId) return {};
+    
+    const team = teams.find(t => t.id === parseInt(viewingTeamId));
+    if (!team) return {};
+    
+    const slots: Record<string, Record<ShiftPeriod, { used: number; total: number }>> = {};
+    
+    events.forEach(event => {
+      const date = event.start;
+      const period = event.extendedProps?.period as ShiftPeriod;
+      
+      if (!slots[date]) {
+        slots[date] = {
+          MORNING: { used: 0, total: 0 },
+          INTERMEDIATE: { used: 0, total: 0 },
+          AFTERNOON: { used: 0, total: 0 },
+          NIGHT: { used: 0, total: 0 },
+        };
+      }
+      
+      if (period) {
+        slots[date][period].used++;
+      }
+    });
+    
+    // Definir totais baseado em dia útil ou fim de semana/feriado
+    Object.keys(slots).forEach(dateStr => {
+      const date = new Date(dateStr);
+      const isWeekendDay = date.getDay() === 0 || date.getDay() === 6;
+      
+      slots[dateStr].MORNING.total = isWeekendDay ? team.weekendMorningSlots : team.weekdayMorningSlots;
+      slots[dateStr].INTERMEDIATE.total = isWeekendDay ? team.weekendIntermediateSlots : team.weekdayIntermediateSlots;
+      slots[dateStr].AFTERNOON.total = isWeekendDay ? team.weekendAfternoonSlots : team.weekdayAfternoonSlots;
+      slots[dateStr].NIGHT.total = isWeekendDay ? team.weekendNightSlots : team.weekdayNightSlots;
+    });
+    
+    return slots;
+  }, [events, viewingTeamId, teams]);
+
   // Handler para quando o calendário muda de mês
   const handleDatesSet = (dateInfo: any) => {
     // Pegar o meio do range visível para determinar o mês
@@ -370,6 +424,42 @@ export default function ShiftCalendar() {
     const team = teams.find(t => t.id === Number(viewingTeamId));
     return team && (team as any).intermediateSlots > 0;
   };
+
+  // Agrupar plantões por data para vista mobile
+  const shiftsGroupedByDate = useMemo(() => {
+    const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    
+    const grouped: Record<string, any[]> = {};
+    
+    events.forEach(event => {
+      const eventDate = new Date(event.start);
+      if (eventDate >= monthStart && eventDate <= monthEnd) {
+        if (!grouped[event.start]) {
+          grouped[event.start] = [];
+        }
+        grouped[event.start].push(event);
+      }
+    });
+    
+    // Ordenar por período dentro de cada data
+    Object.keys(grouped).forEach(date => {
+      grouped[date].sort((a, b) => {
+        const orderA = a.extendedProps?.periodOrder ?? 999;
+        const orderB = b.extendedProps?.periodOrder ?? 999;
+        return orderA - orderB;
+      });
+    });
+    
+    // Retornar array ordenado por data
+    return Object.keys(grouped)
+      .sort()
+      .map(date => ({
+        date,
+        dateObj: new Date(date),
+        shifts: grouped[date],
+      }));
+  }, [events, currentMonth]);
 
   if (loading) {
     return (
@@ -517,10 +607,173 @@ export default function ShiftCalendar() {
         </div>
       )}
 
-      {/* Calendário */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4 md:p-6">
-          <FullCalendar
+      {/* Vista Mobile - Lista Compacta */}
+      {isMobileView && viewingTeamId && (
+        <div className="space-y-4">
+          {/* Navegação de Mês - Mobile */}
+          <div className="bg-white rounded-xl border shadow-sm p-4">
+            <div className="flex items-center justify-between gap-4">
+              <button
+                onClick={() => {
+                  const newMonth = new Date(currentMonth);
+                  newMonth.setMonth(newMonth.getMonth() - 1);
+                  setCurrentMonth(newMonth);
+                }}
+                className="flex items-center justify-center w-12 h-12 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+              >
+                <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              <div className="flex-1 text-center">
+                <p className="text-lg font-bold text-gray-900 capitalize">
+                  {currentMonthName}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {dashboardStats.monthTotal} plantões
+                </p>
+              </div>
+              
+              <button
+                onClick={() => {
+                  const newMonth = new Date(currentMonth);
+                  newMonth.setMonth(newMonth.getMonth() + 1);
+                  setCurrentMonth(newMonth);
+                }}
+                className="flex items-center justify-center w-12 h-12 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+              >
+                <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {shiftsGroupedByDate.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-500">Nenhum plantão neste mês</p>
+              </CardContent>
+            </Card>
+          ) : (
+            shiftsGroupedByDate.map(({ date, dateObj, shifts }) => {
+              const isToday = date === new Date().toISOString().split('T')[0];
+              const dayName = dateObj.toLocaleDateString('pt-BR', { weekday: 'short' });
+              const dayNumber = dateObj.getDate();
+              const monthName = dateObj.toLocaleDateString('pt-BR', { month: 'short' });
+              
+              return (
+                <Card key={date} className={isToday ? 'border-indigo-500 border-2' : ''}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg ${isToday ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+                          <span className="text-xs font-medium uppercase">{dayName}</span>
+                          <span className="text-xl font-bold">{dayNumber}</span>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 capitalize">
+                            {dateObj.toLocaleDateString('pt-BR', { weekday: 'long' })}
+                          </p>
+                          <p className="text-sm text-gray-500 capitalize">
+                            {dayNumber} de {monthName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-gray-600">{shifts.length}</p>
+                        <p className="text-xs text-gray-500">plantões</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="space-y-2">
+                      {shifts.map(shift => (
+                        <button
+                          key={shift.id}
+                          onClick={() => {
+                            setSelectedEvent(shift);
+                            setSelectedPhysioId(shift.extendedProps.physioId.toString());
+                            setSelectedPeriod(shift.extendedProps.period);
+                            setShowEditModal(true);
+                          }}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all active:scale-98"
+                          style={{ borderLeftWidth: '4px', borderLeftColor: shift.backgroundColor }}
+                        >
+                          <div 
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-sm"
+                            style={{ backgroundColor: shift.backgroundColor }}
+                          >
+                            {shift.title.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="font-medium text-gray-900">{shift.title}</p>
+                            <p className="text-sm text-gray-500">{shift.extendedProps.periodName}</p>
+                          </div>
+                          <div className="text-right">
+                            <div 
+                              className="px-2 py-1 rounded text-xs font-medium text-white"
+                              style={{ backgroundColor: shift.backgroundColor }}
+                            >
+                              {shift.extendedProps.periodName}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Botão para adicionar plantão neste dia */}
+                    <button
+                      onClick={() => {
+                        setSelectedDate(date);
+                        if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
+                          setSelectedPhysioId(currentUser.physiotherapistId.toString());
+                        } else {
+                          setSelectedPhysioId('');
+                        }
+                        setSelectedPeriod('MORNING');
+                        setShowAddModal(true);
+                      }}
+                      className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                    >
+                      + Adicionar plantão neste dia
+                    </button>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+          
+          {/* Botão Flutuante para Adicionar Plantão - Mobile */}
+          <button
+            onClick={() => {
+              const today = new Date().toISOString().split('T')[0];
+              setSelectedDate(today);
+              if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
+                setSelectedPhysioId(currentUser.physiotherapistId.toString());
+              } else {
+                setSelectedPhysioId('');
+              }
+              setSelectedPeriod('MORNING');
+              setShowAddModal(true);
+            }}
+            className="fixed bottom-6 right-6 w-16 h-16 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-50"
+            style={{ boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)' }}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Calendário Desktop */}
+      {!isMobileView && (
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="p-4 md:p-6">
+            <FullCalendar
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
             weekends={true}
@@ -571,88 +824,105 @@ export default function ShiftCalendar() {
               );
             }}
             height="auto"
-          />
-        </div>
-        
-        {/* Legenda no rodapé */}
-        <div className="border-t bg-gray-50 px-6 py-4">
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.MORNING }}></div>
-              <span className="text-gray-600">Manhã</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.INTERMEDIATE }}></div>
-              <span className="text-gray-600">Intermediário</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.AFTERNOON }}></div>
-              <span className="text-gray-600">Tarde</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.NIGHT }}></div>
-              <span className="text-gray-600">Noite</span>
+            />
+          </div>
+          
+          {/* Legenda no rodapé */}
+          <div className="border-t bg-gray-50 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.MORNING }}></div>
+                <span className="text-gray-600">Manhã</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.INTERMEDIATE }}></div>
+                <span className="text-gray-600">Intermediário</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.AFTERNOON }}></div>
+                <span className="text-gray-600">Tarde</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: periodColor.NIGHT }}></div>
+                <span className="text-gray-600">Noite</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Modal Adicionar Plantão */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Adicionar Plantão - {selectedDate}</DialogTitle>
+            <DialogTitle className="text-lg">
+              Adicionar Plantão
+            </DialogTitle>
+            <p className="text-sm text-gray-500">
+              {selectedDate && new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR', { 
+                weekday: 'long', 
+                day: 'numeric', 
+                month: 'long' 
+              })}
+            </p>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <div className="space-y-5 py-4">
             <div className="space-y-2">
-              <Label>Período</Label>
+              <Label className="text-base font-medium">Período</Label>
               <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="MORNING">Manhã</SelectItem>
+                  <SelectItem value="MORNING" className="h-12 text-base">🌅 Manhã</SelectItem>
                   {hasIntermediateSlots() && (
-                    <SelectItem value="INTERMEDIATE">Intermediário</SelectItem>
+                    <SelectItem value="INTERMEDIATE" className="h-12 text-base">☀️ Intermediário</SelectItem>
                   )}
-                  <SelectItem value="AFTERNOON">Tarde</SelectItem>
-                  <SelectItem value="NIGHT">Noite</SelectItem>
+                  <SelectItem value="AFTERNOON" className="h-12 text-base">🌤️ Tarde</SelectItem>
+                  <SelectItem value="NIGHT" className="h-12 text-base">🌙 Noite</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Fisioterapeuta</Label>
+              <Label className="text-base font-medium">Fisioterapeuta</Label>
               <Select 
                 value={selectedPhysioId} 
                 onValueChange={setSelectedPhysioId}
                 disabled={currentUser?.role === 'USER'}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-12 text-base">
                   <SelectValue placeholder="Selecione um fisioterapeuta" />
                 </SelectTrigger>
                 <SelectContent>
                   {availablePhysios.map(physio => (
-                    <SelectItem key={physio.id} value={physio.id.toString()}>
+                    <SelectItem key={physio.id} value={physio.id.toString()} className="h-12 text-base">
                       {physio.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {currentUser?.role === 'USER' && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-500">
                   Você só pode criar plantões para si mesmo
                 </p>
               )}
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCloseModal}>
-              Fechar
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button 
+              variant="outline" 
+              onClick={handleCloseModal}
+              className="h-12 text-base flex-1 sm:flex-none"
+            >
+              Cancelar
             </Button>
-            <Button onClick={handleSaveShift}>
+            <Button 
+              onClick={handleSaveShift}
+              className="h-12 text-base flex-1 sm:flex-none"
+            >
               Salvar Plantão
             </Button>
           </DialogFooter>
@@ -661,67 +931,85 @@ export default function ShiftCalendar() {
 
       {/* Modal Editar Plantão */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              Editar Plantão - {selectedEvent ? new Date(selectedEvent.start).toLocaleDateString() : ''}
+            <DialogTitle className="text-lg">
+              Editar Plantão
             </DialogTitle>
+            <p className="text-sm text-gray-500">
+              {selectedEvent && new Date(selectedEvent.start + 'T12:00:00').toLocaleDateString('pt-BR', { 
+                weekday: 'long', 
+                day: 'numeric', 
+                month: 'long' 
+              })}
+            </p>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <div className="space-y-5 py-4">
             <div className="space-y-2">
-              <Label>Período</Label>
+              <Label className="text-base font-medium">Período</Label>
               <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="MORNING">Manhã</SelectItem>
+                  <SelectItem value="MORNING" className="h-12 text-base">🌅 Manhã</SelectItem>
                   {hasIntermediateSlots() && (
-                    <SelectItem value="INTERMEDIATE">Intermediário</SelectItem>
+                    <SelectItem value="INTERMEDIATE" className="h-12 text-base">☀️ Intermediário</SelectItem>
                   )}
-                  <SelectItem value="AFTERNOON">Tarde</SelectItem>
-                  <SelectItem value="NIGHT">Noite</SelectItem>
+                  <SelectItem value="AFTERNOON" className="h-12 text-base">🌤️ Tarde</SelectItem>
+                  <SelectItem value="NIGHT" className="h-12 text-base">🌙 Noite</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Fisioterapeuta</Label>
+              <Label className="text-base font-medium">Fisioterapeuta</Label>
               <Select 
                 value={selectedPhysioId} 
                 onValueChange={setSelectedPhysioId}
                 disabled={currentUser?.role === 'USER'}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-12 text-base">
                   <SelectValue placeholder="Selecione um fisioterapeuta" />
                 </SelectTrigger>
                 <SelectContent>
                   {availablePhysios.map(physio => (
-                    <SelectItem key={physio.id} value={physio.id.toString()}>
+                    <SelectItem key={physio.id} value={physio.id.toString()} className="h-12 text-base">
                       {physio.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {currentUser?.role === 'USER' && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-500">
                   Você só pode editar seus próprios plantões
                 </p>
               )}
             </div>
           </div>
 
-          <DialogFooter className="flex justify-between sm:justify-between">
-            <Button variant="destructive" onClick={handleDeleteShift}>
-              Excluir
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteShift}
+              className="h-12 text-base w-full sm:w-auto"
+            >
+              🗑️ Excluir Plantão
             </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleCloseEditModal}>
-                Fechar
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button 
+                variant="outline" 
+                onClick={handleCloseEditModal}
+                className="h-12 text-base flex-1 sm:flex-none"
+              >
+                Cancelar
               </Button>
-              <Button onClick={handleUpdateShift}>
-                Salvar Alterações
+              <Button 
+                onClick={handleUpdateShift}
+                className="h-12 text-base flex-1 sm:flex-none"
+              >
+                Salvar
               </Button>
             </div>
           </DialogFooter>
