@@ -6,7 +6,7 @@ declare module 'next-auth' {
       id: number;
       email: string;
       name: string;
-      role: 'ADMIN' | 'USER';
+      role: 'ADMIN' | 'MANAGER' | 'USER';
       physiotherapistId: number | null;
       isFirstLogin: boolean;
       mustChangePassword: boolean;
@@ -17,7 +17,7 @@ declare module 'next-auth' {
     id: string;
     email: string;
     name: string;
-    role: 'ADMIN' | 'USER';
+    role: 'ADMIN' | 'MANAGER' | 'USER';
     physiotherapistId: number | null;
     isFirstLogin: boolean;
     mustChangePassword: boolean;
@@ -29,7 +29,7 @@ declare module 'next-auth/jwt' {
     id: number;
     email: string;
     name: string;
-    role: 'ADMIN' | 'USER';
+    role: 'ADMIN' | 'MANAGER' | 'USER';
     physiotherapistId: number | null;
     isFirstLogin: boolean;
     mustChangePassword: boolean;

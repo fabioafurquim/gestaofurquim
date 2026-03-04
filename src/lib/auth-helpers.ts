@@ -55,3 +55,26 @@ export async function requireAdmin() {
   
   return { error: null, user };
 }
+
+/**
+ * Helper para verificar se usuário é admin ou gestor (manager)
+ */
+export async function requireAdminOrManager() {
+  const { error, user } = await requireAuth();
+  
+  if (error) {
+    return { error, user: null };
+  }
+  
+  if (user!.role !== 'ADMIN' && user!.role !== 'MANAGER') {
+    return {
+      error: NextResponse.json(
+        { error: 'Acesso negado. Apenas administradores e gestores.' },
+        { status: 403 }
+      ),
+      user: null
+    };
+  }
+  
+  return { error: null, user };
+}

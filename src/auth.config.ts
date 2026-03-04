@@ -38,7 +38,7 @@ export const authConfig = {
         session.user.id = token.id as number;
         session.user.email = token.email as string;
         session.user.name = token.name as string;
-        session.user.role = token.role as 'ADMIN' | 'USER';
+        session.user.role = token.role as 'ADMIN' | 'MANAGER' | 'USER';
         session.user.physiotherapistId = token.physiotherapistId as number | null;
         session.user.isFirstLogin = token.isFirstLogin as boolean;
         session.user.mustChangePassword = token.mustChangePassword as boolean;
@@ -62,7 +62,7 @@ export const authConfig = {
           email: user.email,
           name: user.name,
           role: user.role,
-          physiotherapistId: user.physiotherapistId,
+          physiotherapistId: user.physiotherapistId ?? null,
           isFirstLogin: user.isFirstLogin,
           mustChangePassword: user.mustChangePassword,
         };

@@ -7,7 +7,7 @@ import { auth } from '@/auth';
 const createUserSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
   email: z.string().email('Email inválido'),
-  role: z.enum(['ADMIN', 'USER'], { errorMap: () => ({ message: 'Role deve ser ADMIN ou USER' }) }),
+  role: z.enum(['ADMIN', 'MANAGER', 'USER'], { errorMap: () => ({ message: 'Role deve ser ADMIN, MANAGER ou USER' }) }),
   physiotherapistId: z.union([
     z.string().transform((val) => parseInt(val, 10)),
     z.number(),
@@ -113,17 +113,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Verifica se o fisioterapeuta já tem um usuário associado
-      const existingUserForPhysiotherapist = await prisma.user.findFirst({
-        where: { physiotherapistId: validatedData.physiotherapistId }
-      });
-
-      if (existingUserForPhysiotherapist) {
-        return NextResponse.json(
-          { error: 'Este fisioterapeuta já possui um usuário associado' },
-          { status: 400 }
-        );
-      }
+      // Nota: Removida validação de fisioterapeuta único por usuário
+      // Agora múltiplos usuários (ADMIN, MANAGER, USER) podem se vincular ao mesmo fisioterapeuta
     }
 
     // Gera uma senha padrão
@@ -138,8 +129,14 @@ export async function POST(request: NextRequest) {
       role: validatedData.role,
       isFirstLogin: true,
       mustChangePassword: true,
-      createdBy: session.user.id,
     };
+
+    // Adicionar createdBy se existir
+    if (session.user.id) {
+      createData.createdBy = typeof session.user.id === 'string' 
+        ? parseInt(session.user.id) 
+        : session.user.id;
+    }
 
     // Só adicionar physiotherapistId se não for undefined
     if (validatedData.physiotherapistId !== undefined) {

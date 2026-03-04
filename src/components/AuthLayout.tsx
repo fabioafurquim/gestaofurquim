@@ -10,7 +10,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'ADMIN' | 'USER';
+  role: 'ADMIN' | 'MANAGER' | 'USER';
   physiotherapistId: string | null;
   isFirstLogin: boolean;
   mustChangePassword: boolean;
@@ -18,7 +18,7 @@ interface User {
 
 interface AuthLayoutProps {
   children: ReactNode;
-  requiredRole?: 'ADMIN' | 'USER';
+  requiredRole?: 'ADMIN' | 'MANAGER' | 'USER';
   title?: string;
   fullWidth?: boolean;
 }
@@ -62,6 +62,15 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     { name: 'Plantões', href: '/shifts', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
   ];
 
+  // Navegação para gestores - apenas plantões e cadastros básicos
+  const managerNavigation = [
+    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+    { name: 'Plantões', href: '/shifts', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+    { name: 'Fisioterapeutas', href: '/physiotherapists', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+    { name: 'Equipes', href: '/teams', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+    { name: 'Feriados', href: '/holidays', icon: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' },
+  ];
+
   // Navegação completa para administradores
   const adminNavigation = [
     { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -77,7 +86,7 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     { name: 'Manutenção', href: '/maintenance', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
   ];
 
-  const allNavigation = user.role === 'ADMIN' ? adminNavigation : basicNavigation;
+  const allNavigation = user.role === 'ADMIN' ? adminNavigation : user.role === 'MANAGER' ? managerNavigation : basicNavigation;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -145,7 +154,7 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               </div>
               <div className="ml-3 flex-1">
                 <p className="text-sm font-medium text-white">{user.name}</p>
-                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : 'Usuário'}</p>
+                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}</p>
               </div>
             </div>
           </div>
@@ -207,7 +216,7 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               </div>
               <div className="ml-3 flex-1 min-w-0">
                 <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : 'Usuário'}</p>
+                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}</p>
               </div>
               <button
                 onClick={handleLogout}

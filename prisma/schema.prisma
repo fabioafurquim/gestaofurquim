@@ -37,7 +37,7 @@ model Physiotherapist {
   tipoPix         String?
   teams           PhysiotherapistTeam[]   // Relação many-to-many com equipes
   shifts          Shift[]
-  user            User?
+  users           User[]                  @relation("UserPhysiotherapist") // Um fisioterapeuta pode ter múltiplos usuários
   paymentRecords  PaymentRecord[]         @relation("PaymentRecords")
 }
 
@@ -88,13 +88,13 @@ model User {
   role               UserRole         @default(USER)
   isFirstLogin       Boolean          @default(true)
   mustChangePassword Boolean          @default(true)
-  physiotherapistId  Int?             @unique
+  physiotherapistId  Int?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   createdBy          Int?
   creator            User?            @relation("UserCreator", fields: [createdBy], references: [id])
   createdUsers       User[]           @relation("UserCreator")
-  physiotherapist    Physiotherapist? @relation(fields: [physiotherapistId], references: [id])
+  physiotherapist    Physiotherapist? @relation("UserPhysiotherapist", fields: [physiotherapistId], references: [id])
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
@@ -133,6 +133,7 @@ enum ContractType {
 
 enum UserRole {
   ADMIN
+  MANAGER
   USER
 }
 
