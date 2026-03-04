@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, generateDefaultPassword, getCurrentUser, isAdmin } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { hashPassword, generateDefaultPassword } from '@/lib/auth';
+import { auth } from '@/auth';
 
 const createUserSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -21,10 +21,9 @@ const createUserSchema = z.object({
  */
 export async function GET() {
   try {
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser || !isAdmin(currentUser)) {
+    if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem listar usuários.' },
         { status: 403 }
@@ -69,10 +68,9 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser || !isAdmin(currentUser)) {
+    if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem criar usuários.' },
         { status: 403 }
@@ -140,7 +138,7 @@ export async function POST(request: NextRequest) {
       role: validatedData.role,
       isFirstLogin: true,
       mustChangePassword: true,
-      createdBy: currentUser.id,
+      createdBy: session.user.id,
     };
 
     // Só adicionar physiotherapistId se não for undefined

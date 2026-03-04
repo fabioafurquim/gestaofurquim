@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, generateDefaultPassword, getCurrentUser, isAdmin } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { hashPassword, generateDefaultPassword } from '@/lib/auth';
+import { auth } from '@/auth';
 
 /**
  * POST /api/users/[id]/reset-password
@@ -13,10 +13,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser || !isAdmin(currentUser)) {
+    if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem resetar senhas.' },
         { status: 403 }

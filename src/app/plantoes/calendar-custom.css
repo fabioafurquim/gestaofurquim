@@ -96,6 +96,32 @@
   font-weight: 600;
 }
 
+/* Container do número do dia - posicionamento relativo para badges */
+.fc .fc-daygrid-day-top {
+  position: relative;
+  min-height: 2rem;
+}
+
+/* Célula do dia também precisa ser relativa para badges */
+.fc .fc-daygrid-day-frame {
+  position: relative;
+}
+
+/* Badge de vagas disponíveis - posicionado no canto superior esquerdo */
+.vacancy-badge {
+  position: absolute !important;
+  top: 0.25rem !important;
+  left: 0.25rem !important;
+  z-index: 10 !important;
+  pointer-events: auto !important;
+}
+
+/* Garantir que o número do dia fique à direita */
+.fc .fc-daygrid-day-number {
+  position: relative;
+  z-index: 2;
+}
+
 /* Eventos */
 .fc-event {
   border: none !important;

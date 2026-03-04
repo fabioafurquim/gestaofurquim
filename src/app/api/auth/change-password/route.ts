@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, verifyPassword, getCurrentUser, generateToken } from '@/lib/auth';
-import { headers, cookies } from 'next/headers';
+import { hashPassword, verifyPassword, generateToken } from '@/lib/auth';
+import { auth } from '@/auth';
+import { cookies } from 'next/headers';
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Senha atual é obrigatória'),
@@ -19,10 +20,9 @@ const changePasswordSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser) {
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Não autenticado' },
         { status: 401 }
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Busca o usuário completo com a senha
     const user = await prisma.user.findUnique({
-      where: { id: currentUser.id },
+      where: { id: session.user.id },
     });
 
     if (!user) {
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     // Atualiza a senha e remove as flags de primeira entrada
     const updatedUser = await prisma.user.update({
-      where: { id: currentUser.id },
+      where: { id: session.user.id },
       data: {
         password: hashedNewPassword,
         isFirstLogin: false,

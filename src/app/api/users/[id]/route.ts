@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, generateDefaultPassword, getCurrentUser, isAdmin } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { hashPassword, generateDefaultPassword } from '@/lib/auth';
+import { auth } from '@/auth';
 
 const updateUserSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').optional(),
@@ -21,17 +21,15 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser) {
+    if (!session?.user) {
       return NextResponse.json(
-        { error: 'Não autenticado' },
+        { error: 'Acesso negado. Usuário não autenticado.' },
         { status: 401 }
       );
     }
 
-    // Converte o id para inteiro
     const userId = parseInt(id, 10);
     
     if (isNaN(userId)) {
@@ -42,7 +40,7 @@ export async function GET(
     }
 
     // Administradores podem ver qualquer usuário, usuários comuns só podem ver a si mesmos
-    if (!isAdmin(currentUser) && currentUser.id !== userId) {
+    if (session.user.role !== 'ADMIN' && session.user.id !== userId) {
       return NextResponse.json(
         { error: 'Acesso negado' },
         { status: 403 }
@@ -103,10 +101,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser || !isAdmin(currentUser)) {
+    if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem atualizar usuários.' },
         { status: 403 }
@@ -242,10 +239,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const headersList = await headers();
-    const currentUser = await getCurrentUser(headersList);
+    const session = await auth();
 
-    if (!currentUser || !isAdmin(currentUser)) {
+    if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem remover usuários.' },
         { status: 403 }
@@ -263,7 +259,7 @@ export async function DELETE(
     }
 
     // Não permite que o usuário delete a si mesmo
-    if (currentUser.id === userId) {
+    if (session.user.id === userId) {
       return NextResponse.json(
         { error: 'Você não pode deletar sua própria conta' },
         { status: 400 }

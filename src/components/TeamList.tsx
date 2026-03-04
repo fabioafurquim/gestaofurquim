@@ -7,10 +7,14 @@ import { FiEdit, FiTrash2 } from 'react-icons/fi';
 interface Team {
   id: number;
   name: string;
-  morningSlots: number;
-  afternoonSlots: number;
-  nightSlots: number;
-  intermediateSlots: number;
+  weekdayMorningSlots: number;
+  weekdayIntermediateSlots: number;
+  weekdayAfternoonSlots: number;
+  weekdayNightSlots: number;
+  weekendMorningSlots: number;
+  weekendIntermediateSlots: number;
+  weekendAfternoonSlots: number;
+  weekendNightSlots: number;
   shiftValue: number | null | undefined;
 }
 
@@ -47,10 +51,10 @@ export default function TeamList() {
       <thead>
         <tr>
           <th>Nome</th>
-          <th>Vagas Manhã</th>
-          <th>Vagas Intermediário</th>
-          <th>Vagas Tarde</th>
-          <th>Vagas Noite</th>
+          <th>Manhã (Útil/FDS)</th>
+          <th>Intermediário (Útil/FDS)</th>
+          <th>Tarde (Útil/FDS)</th>
+          <th>Noite (Útil/FDS)</th>
           <th>Valor do Plantão</th>
           <th>Ações</th>
         </tr>
@@ -59,10 +63,10 @@ export default function TeamList() {
         {teams.map((team) => (
           <tr key={team.id}>
             <td>{team.name}</td>
-            <td>{team.morningSlots}</td>
-            <td>{team.intermediateSlots}</td>
-            <td>{team.afternoonSlots}</td>
-            <td>{team.nightSlots}</td>
+            <td>{team.weekdayMorningSlots} / {team.weekendMorningSlots}</td>
+            <td>{team.weekdayIntermediateSlots} / {team.weekendIntermediateSlots}</td>
+            <td>{team.weekdayAfternoonSlots} / {team.weekendAfternoonSlots}</td>
+            <td>{team.weekdayNightSlots} / {team.weekendNightSlots}</td>
             <td>R$ {(Number(team.shiftValue) || 0).toFixed(2)}</td>
             <td>
               <button 

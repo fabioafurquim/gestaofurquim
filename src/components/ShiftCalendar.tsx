@@ -8,6 +8,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { ShiftTeam, ShiftPeriod } from '@prisma/client';
 import ptBrLocale from '@fullcalendar/core/locales/pt-br';
 import { toast } from 'sonner';
+import { useSession } from 'next-auth/react';
 import '../app/plantoes/calendar-custom.css';
 import {
   Dialog,
@@ -44,6 +45,7 @@ const periodOrderMap: Record<ShiftPeriod, number> = {
 };
 
 export default function ShiftCalendar() {
+  const { data: session } = useSession();
   const [events, setEvents] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -54,24 +56,17 @@ export default function ShiftCalendar() {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<ShiftPeriod>('MORNING');
   const [selectedPhysioId, setSelectedPhysioId] = useState('');
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isMobileView, setIsMobileView] = useState(false);
   const [viewAllTeams, setViewAllTeams] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const currentUser = session?.user;
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        // Buscar usuário logado através da API
-        const userResponse = await fetch('/api/auth/me');
-        let user = null;
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          user = userData.user;
-          setCurrentUser(user);
-        }
-
         const [physiosRes, teamsRes] = await Promise.all([
           fetch('/api/physiotherapists'),
           fetch('/api/teams')
@@ -83,8 +78,8 @@ export default function ShiftCalendar() {
         setTeams(teamsData);
 
         // Se o usuário é USER (fisioterapeuta), pré-selecionar sua primeira equipe
-        if (user && user.role === 'USER' && user.physiotherapistId) {
-          const userPhysio = physiotherapists.find((p: any) => p.id === user.physiotherapistId);
+        if (currentUser && currentUser.role === 'USER' && currentUser.physiotherapistId) {
+          const userPhysio = physiotherapists.find((p: any) => p.id === currentUser.physiotherapistId);
           if (userPhysio && userPhysio.teams && userPhysio.teams.length > 0) {
             setViewingTeamId(userPhysio.teams[0].shiftTeamId.toString());
           }
@@ -97,7 +92,7 @@ export default function ShiftCalendar() {
       }
     };
     fetchInitialData();
-  }, []);
+  }, [currentUser]);
 
   const fetchShifts = async (teamId: string) => {
     try {
@@ -209,6 +204,11 @@ export default function ShiftCalendar() {
     
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Forçar re-render do calendário quando eventos mudarem
+  useEffect(() => {
+    setRefreshKey(prev => prev + 1);
+  }, [events]);
 
   const availablePhysios = useMemo(() => {
     if (!viewingTeamId) return [];
@@ -357,6 +357,8 @@ export default function ShiftCalendar() {
         toast.success('Plantão movido com sucesso');
         // Recarregar os plantões do servidor para garantir sincronização
         await fetchShifts(viewingTeamId);
+        // Forçar re-render do calendário para atualizar badges
+        setRefreshKey(prev => prev + 1);
       }
     } catch (error: any) {
       console.error('Erro no drag and drop:', error);
@@ -486,7 +488,7 @@ export default function ShiftCalendar() {
 
   const hasIntermediateSlots = () => {
     const team = teams.find(t => t.id === Number(viewingTeamId));
-    return team && (team as any).intermediateSlots > 0;
+    return team && (team.weekdayIntermediateSlots > 0 || team.weekendIntermediateSlots > 0);
   };
 
   // Agrupar plantões por data para vista mobile
@@ -879,6 +881,7 @@ export default function ShiftCalendar() {
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
           <div className="p-4 md:p-6">
             <FullCalendar
+            key={`calendar-${viewingTeamId}-${viewAllTeams}-${refreshKey}`}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
             weekends={true}
@@ -928,37 +931,53 @@ export default function ShiftCalendar() {
                 </div>
               );
             }}
-            dayCellContent={(arg) => {
-              if (currentUser?.role !== 'ADMIN' || viewAllTeams) return arg.dayNumberText;
+            dayCellDidMount={(arg) => {
+              if (currentUser?.role !== 'ADMIN' || viewAllTeams || !viewingTeamId) return;
+              
+              const team = teams.find(t => t.id === parseInt(viewingTeamId));
+              if (!team) return;
               
               const dateStr = arg.date.toISOString().split('T')[0];
-              const daySlots = availableSlots[dateStr];
+              const isWeekendDay = arg.date.getDay() === 0 || arg.date.getDay() === 6;
               
-              if (!daySlots) return arg.dayNumberText;
+              // Total de vagas no dia = soma de todos os slots de todos os períodos
+              const totalSlots = 
+                (isWeekendDay ? team.weekendMorningSlots : team.weekdayMorningSlots) +
+                (isWeekendDay ? team.weekendIntermediateSlots : team.weekdayIntermediateSlots) +
+                (isWeekendDay ? team.weekendAfternoonSlots : team.weekdayAfternoonSlots) +
+                (isWeekendDay ? team.weekendNightSlots : team.weekdayNightSlots);
               
-              // Calcular total de vagas disponíveis no dia
-              const totalAvailable = Object.values(daySlots).reduce((sum, slot) => sum + slot.available, 0);
-              const totalSlots = Object.values(daySlots).reduce((sum, slot) => sum + slot.total, 0);
-              const hasEmptySlots = totalAvailable > 0 && totalAvailable < totalSlots;
-              const isCritical = totalAvailable > 0 && totalAvailable <= 2;
+              // Contar APENAS plantões DESTA EQUIPE neste dia
+              const shiftsInDay = events.filter(e => 
+                e.start === dateStr && 
+                e.extendedProps?.teamId === parseInt(viewingTeamId)
+              ).length;
               
-              return (
-                <div className="fc-daygrid-day-number-custom">
-                  <span>{arg.dayNumberText}</span>
-                  {hasEmptySlots && (
-                    <div 
-                      className={`inline-flex items-center justify-center ml-1 px-1.5 py-0.5 rounded text-xs font-medium ${
-                        isCritical 
-                          ? 'bg-red-100 text-red-700 border border-red-300' 
-                          : 'bg-amber-100 text-amber-700 border border-amber-300'
-                      }`}
-                      title={`${totalAvailable} vaga(s) disponível(is) de ${totalSlots}`}
-                    >
-                      {isCritical ? '⚠️' : '!'} {totalAvailable}
-                    </div>
-                  )}
-                </div>
-              );
+              // Vagas disponíveis = total de vagas - plantões cadastrados
+              const available = totalSlots - shiftsInDay;
+              
+              // Badge aparece quando: há plantões cadastrados E ainda sobram vagas
+              const hasEmptySlots = shiftsInDay > 0 && available > 0 && available < totalSlots;
+              const isCritical = available > 0 && available <= 2;
+              
+              if (hasEmptySlots) {
+                const badge = document.createElement('div');
+                badge.className = `vacancy-badge inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                  isCritical 
+                    ? 'bg-red-100 text-red-700 border border-red-300' 
+                    : 'bg-amber-100 text-amber-700 border border-amber-300'
+                }`;
+                badge.title = `${available} vaga(s) disponível(is) de ${totalSlots}\n${shiftsInDay} plantão(ões) cadastrado(s) nesta equipe`;
+                badge.textContent = `${isCritical ? '⚠️' : '!'} ${available}`;
+                
+                const dayTop = arg.el.querySelector('.fc-daygrid-day-top');
+                if (dayTop) {
+                  dayTop.appendChild(badge);
+                } else {
+                  arg.el.style.position = 'relative';
+                  arg.el.appendChild(badge);
+                }
+              }
             }}
             height="auto"
             />
