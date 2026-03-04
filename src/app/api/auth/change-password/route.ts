@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, verifyPassword, generateToken } from '@/lib/auth';
+import { hashPassword, verifyPassword } from '@/lib/auth';
 import { auth } from '@/auth';
-import { cookies } from 'next/headers';
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Senha atual é obrigatória'),
@@ -20,22 +19,32 @@ const changePasswordSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔐 Iniciando troca de senha...');
     const session = await auth();
 
     if (!session?.user) {
+      console.log('❌ Sessão não encontrada');
       return NextResponse.json(
         { error: 'Não autenticado' },
         { status: 401 }
       );
     }
 
+    console.log('✅ Sessão encontrada:', session.user.email);
+
     const body = await request.json();
+    console.log('📝 Dados recebidos (sem senhas):', { email: session.user.email });
+    
     const validatedData = changePasswordSchema.parse(body);
+    console.log('✅ Validação OK');
 
     // Busca o usuário completo com a senha
+    const userId = typeof session.user.id === 'string' ? parseInt(session.user.id) : session.user.id;
+    console.log('🔍 Buscando usuário no banco, ID:', userId, 'Tipo:', typeof userId);
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: userId },
     });
+    console.log('✅ Usuário encontrado:', user ? 'SIM' : 'NÃO');
 
     if (!user) {
       return NextResponse.json(
@@ -62,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     // Atualiza a senha e remove as flags de primeira entrada
     const updatedUser = await prisma.user.update({
-      where: { id: session.user.id },
+      where: { id: userId },
       data: {
         password: hashedNewPassword,
         isFirstLogin: false,
@@ -70,26 +79,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Gera um novo token com as informações atualizadas
-    const newToken = generateToken({
-      id: updatedUser.id,
-      email: updatedUser.email,
-      name: updatedUser.name,
-      role: updatedUser.role,
-      physiotherapistId: updatedUser.physiotherapistId,
-      isFirstLogin: updatedUser.isFirstLogin,
-      mustChangePassword: updatedUser.mustChangePassword,
-    });
-
-    // Atualiza o cookie de autenticação
-    const cookieStore = await cookies();
-    cookieStore.set('auth-token', newToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
-    });
-
+    // NextAuth gerencia a sessão automaticamente, não precisa gerar token manualmente
     return NextResponse.json({
       message: 'Senha alterada com sucesso',
       user: {

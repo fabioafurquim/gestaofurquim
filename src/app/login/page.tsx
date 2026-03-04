@@ -64,8 +64,15 @@ export default function LoginPage() {
       }
 
       if (result?.ok) {
-        // Redireciona para a página principal após sucesso
-        router.push('/');
+        // Verifica se o usuário precisa trocar senha
+        const sessionResponse = await fetch('/api/auth/session');
+        const sessionData = await sessionResponse.json();
+        
+        if (sessionData?.user?.mustChangePassword || sessionData?.user?.isFirstLogin) {
+          router.push('/change-password');
+        } else {
+          router.push('/');
+        }
         router.refresh();
       }
     } catch (error) {

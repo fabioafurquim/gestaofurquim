@@ -35,16 +35,6 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Verifica se o usuário precisa trocar a senha
-  useEffect(() => {
-    if (session?.user && (session.user.mustChangePassword || session.user.isFirstLogin)) {
-      // Não redireciona se já estiver na página de trocar senha
-      if (pathname !== '/change-password') {
-        router.push('/change-password');
-      }
-    }
-  }, [session, pathname, router]);
-
   const handleLogout = async () => {
     await signOut({ redirect: false });
     router.push('/login');

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 interface ChangePasswordFormData {
   currentPassword: string;
@@ -11,6 +12,7 @@ interface ChangePasswordFormData {
 
 export default function ChangePasswordPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [formData, setFormData] = useState<ChangePasswordFormData>({
     currentPassword: '',
     newPassword: '',
@@ -19,36 +21,13 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [userInfo, setUserInfo] = useState<{ name: string; isFirstLogin: boolean } | null>(null);
 
-  // Verifica se o usuário está autenticado e precisa trocar a senha
+  // Verifica se o usuário está autenticado
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/auth/me');
-        if (!response.ok) {
-          router.push('/login');
-          return;
-        }
-        
-        const data = await response.json();
-        if (!data.user.mustChangePassword && !data.user.isFirstLogin) {
-          router.push('/');
-          return;
-        }
-        
-        setUserInfo({
-          name: data.user.name,
-          isFirstLogin: data.user.isFirstLogin,
-        });
-      } catch (error) {
-        console.error('Erro ao verificar autenticação:', error);
-        router.push('/login');
-      }
-    };
-
-    checkAuth();
-  }, [router]);
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -75,6 +54,10 @@ export default function ChangePasswordPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        // Se houver detalhes de validação, mostra o primeiro erro
+        if (data.details && data.details.length > 0) {
+          throw new Error(data.details[0].message);
+        }
         throw new Error(data.error || 'Erro ao alterar senha');
       }
 
@@ -91,7 +74,7 @@ export default function ChangePasswordPage() {
     }
   };
 
-  if (!userInfo) {
+  if (status === 'loading' || !session?.user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -101,6 +84,8 @@ export default function ChangePasswordPage() {
       </div>
     );
   }
+
+  const user = session.user;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -112,12 +97,12 @@ export default function ChangePasswordPage() {
             </svg>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            {userInfo.isFirstLogin ? 'Primeiro Acesso' : 'Alterar Senha'}
+            {user.isFirstLogin ? 'Primeiro Acesso' : 'Alterar Senha'}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {userInfo.isFirstLogin 
-              ? `Olá, ${userInfo.name}! Por segurança, você deve alterar sua senha no primeiro acesso.`
-              : `Olá, ${userInfo.name}! Você precisa alterar sua senha para continuar.`
+            {user.isFirstLogin 
+              ? `Olá, ${user.name}! Por segurança, você deve alterar sua senha no primeiro acesso.`
+              : `Olá, ${user.name}! Você precisa alterar sua senha para continuar.`
             }
           </p>
         </div>
