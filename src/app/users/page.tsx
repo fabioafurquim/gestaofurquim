@@ -9,7 +9,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'ADMIN' | 'USER';
+  role: 'ADMIN' | 'MANAGER' | 'USER';
   physiotherapistId: string | null;
   isFirstLogin: boolean;
   mustChangePassword: boolean;
@@ -32,7 +32,7 @@ interface Physiotherapist {
 interface CreateUserFormData {
   name: string;
   email: string;
-  role: 'ADMIN' | 'USER';
+  role: 'ADMIN' | 'MANAGER' | 'USER';
   physiotherapistId: string;
 }
 
@@ -62,7 +62,7 @@ export default function UsersPage() {
       return;
     }
     
-    if (session?.user?.role !== 'ADMIN') {
+    if (session?.user?.role !== 'ADMIN' && session?.user?.role !== 'MANAGER') {
       router.push('/');
       return;
     }
@@ -71,7 +71,7 @@ export default function UsersPage() {
   // Carrega dados quando autenticado
   useEffect(() => {
     const loadData = async () => {
-      if (status !== 'authenticated' || session?.user?.role !== 'ADMIN') return;
+      if (status !== 'authenticated' || (session?.user?.role !== 'ADMIN' && session?.user?.role !== 'MANAGER')) return;
       
       try {
         // Carrega usuários
@@ -119,7 +119,7 @@ export default function UsersPage() {
         },
         body: JSON.stringify({
           ...formData,
-          physiotherapistId: formData.role === 'USER' ? formData.physiotherapistId : undefined,
+          physiotherapistId: formData.physiotherapistId || undefined,
         }),
       });
 
@@ -299,18 +299,19 @@ export default function UsersPage() {
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 >
                   <option value="USER">Usuário Comum</option>
+                  <option value="MANAGER">Gestor</option>
                   <option value="ADMIN">Administrador</option>
                 </select>
               </div>
-              {formData.role === 'USER' && (
+              {(formData.role === 'USER' || formData.role === 'MANAGER' || formData.role === 'ADMIN') && (
                 <div>
                   <label htmlFor="physiotherapistId" className="block text-sm font-medium text-gray-700">
-                    Fisioterapeuta
+                    Fisioterapeuta {formData.role === 'USER' ? '(obrigatório)' : '(opcional)'}
                   </label>
                   <select
                     id="physiotherapistId"
                     name="physiotherapistId"
-                    required
+                    required={formData.role === 'USER'}
                     value={formData.physiotherapistId}
                     onChange={handleInputChange}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -356,10 +357,10 @@ export default function UsersPage() {
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
                         <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                          user.role === 'ADMIN' ? 'bg-purple-100' : 'bg-blue-100'
+                          user.role === 'ADMIN' ? 'bg-purple-100' : user.role === 'MANAGER' ? 'bg-green-100' : 'bg-blue-100'
                         }`}>
                           <span className={`text-sm font-medium ${
-                            user.role === 'ADMIN' ? 'text-purple-800' : 'text-blue-800'
+                            user.role === 'ADMIN' ? 'text-purple-800' : user.role === 'MANAGER' ? 'text-green-800' : 'text-blue-800'
                           }`}>
                             {user.name.charAt(0).toUpperCase()}
                           </span>
@@ -371,9 +372,11 @@ export default function UsersPage() {
                           <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             user.role === 'ADMIN' 
                               ? 'bg-purple-100 text-purple-800' 
+                              : user.role === 'MANAGER'
+                              ? 'bg-green-100 text-green-800'
                               : 'bg-blue-100 text-blue-800'
                           }`}>
-                            {user.role === 'ADMIN' ? 'Admin' : 'Usuário'}
+                            {user.role === 'ADMIN' ? 'Admin' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}
                           </span>
                           {(user.isFirstLogin || user.mustChangePassword) && (
                             <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
