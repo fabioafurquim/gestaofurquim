@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, ReactNode } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
@@ -33,6 +33,17 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     },
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Verifica se o usuário precisa trocar a senha
+  useEffect(() => {
+    if (session?.user && (session.user.mustChangePassword || session.user.isFirstLogin)) {
+      // Não redireciona se já estiver na página de trocar senha
+      if (pathname !== '/change-password') {
+        router.push('/change-password');
+      }
+    }
+  }, [session, pathname, router]);
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
@@ -218,6 +229,15 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
                 <p className="text-sm font-medium text-white truncate">{user.name}</p>
                 <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}</p>
               </div>
+              <Link
+                href="/change-password"
+                className="ml-2 p-2 rounded-lg text-indigo-200 hover:text-white hover:bg-white/10 transition-colors"
+                title="Trocar Senha"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="ml-2 p-2 rounded-lg text-indigo-200 hover:text-white hover:bg-white/10 transition-colors"

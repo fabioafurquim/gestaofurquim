@@ -194,7 +194,7 @@ export async function authenticateUser(email: string, password: string): Promise
  * Gera uma senha padrão para novos usuários
  */
 export function generateDefaultPassword(): string {
-  return Math.random().toString(36).slice(-8);
+  return 'furquim';
 }
 
 /**
