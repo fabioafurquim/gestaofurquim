@@ -58,6 +58,7 @@ export default function ShiftCalendar() {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isMobileView, setIsMobileView] = useState(false);
+  const [viewAllTeams, setViewAllTeams] = useState(false);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -96,26 +97,6 @@ export default function ShiftCalendar() {
       }
     };
     fetchInitialData();
-  }, []);
-
-  useEffect(() => {
-    if (!viewingTeamId) {
-      setEvents([]);
-      return;
-    }
-    fetchShifts(viewingTeamId);
-  }, [viewingTeamId]);
-
-  // Detectar tamanho da tela para alternar vista mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobileView(window.innerWidth < 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    
-    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   const fetchShifts = async (teamId: string) => {
@@ -159,6 +140,75 @@ export default function ShiftCalendar() {
       alert('Erro ao carregar plantões.');
     }
   };
+
+  const fetchAllTeamsShifts = async () => {
+    try {
+      // Buscar plantões de todas as equipes
+      const allShiftsPromises = teams.map(team => 
+        fetch(`/api/shifts?teamId=${team.id}`).then(res => res.json())
+      );
+      
+      const allShiftsArrays = await Promise.all(allShiftsPromises);
+      const allShifts = allShiftsArrays.flat();
+      
+      const periodNames: Record<ShiftPeriod, string> = {
+        MORNING: 'Manhã',
+        INTERMEDIATE: 'Intermediário',
+        AFTERNOON: 'Tarde',
+        NIGHT: 'Noite',
+      };
+      
+      const formattedEvents = allShifts.map((shift: any) => {
+        const dateObj = new Date(shift.date);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        
+        return {
+          id: shift.id.toString(),
+          title: `${shift.physiotherapist.name} (${shift.shiftTeam.name})`,
+          start: dateStr,
+          allDay: true,
+          backgroundColor: periodColor[shift.period as ShiftPeriod],
+          borderColor: periodColor[shift.period as ShiftPeriod],
+          extendedProps: {
+            physioId: shift.physiotherapistId,
+            teamId: shift.shiftTeamId,
+            teamName: shift.shiftTeam.name,
+            period: shift.period,
+            periodName: periodNames[shift.period as ShiftPeriod],
+            periodOrder: periodOrderMap[shift.period as ShiftPeriod],
+            physioName: shift.physiotherapist.name,
+          },
+        };
+      });
+      
+      setEvents(formattedEvents);
+    } catch (error) {
+      console.error("Falha ao buscar plantões de todas as equipes:", error);
+      alert('Erro ao carregar plantões.');
+    }
+  };
+
+  useEffect(() => {
+    if (viewAllTeams) {
+      fetchAllTeamsShifts();
+    } else if (viewingTeamId) {
+      fetchShifts(viewingTeamId);
+    } else {
+      setEvents([]);
+    }
+  }, [viewingTeamId, viewAllTeams, teams]);
+
+  // Detectar tamanho da tela para alternar vista mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const availablePhysios = useMemo(() => {
     if (!viewingTeamId) return [];
@@ -370,46 +420,60 @@ export default function ShiftCalendar() {
     };
   }, [events, currentMonth, stats.total]);
 
-  // Calcular vagas disponíveis por data e período
+  // Calcular vagas disponíveis por data e período (incluindo todas as datas do mês)
   const availableSlots = useMemo(() => {
     if (!viewingTeamId) return {};
     
     const team = teams.find(t => t.id === parseInt(viewingTeamId));
     if (!team) return {};
     
-    const slots: Record<string, Record<ShiftPeriod, { used: number; total: number }>> = {};
+    const slots: Record<string, Record<ShiftPeriod, { used: number; total: number; available: number }>> = {};
     
+    // Inicializar todas as datas do mês atual
+    const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    
+    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const isWeekendDay = d.getDay() === 0 || d.getDay() === 6;
+      
+      slots[dateStr] = {
+        MORNING: { 
+          used: 0, 
+          total: isWeekendDay ? team.weekendMorningSlots : team.weekdayMorningSlots,
+          available: isWeekendDay ? team.weekendMorningSlots : team.weekdayMorningSlots
+        },
+        INTERMEDIATE: { 
+          used: 0, 
+          total: isWeekendDay ? team.weekendIntermediateSlots : team.weekdayIntermediateSlots,
+          available: isWeekendDay ? team.weekendIntermediateSlots : team.weekdayIntermediateSlots
+        },
+        AFTERNOON: { 
+          used: 0, 
+          total: isWeekendDay ? team.weekendAfternoonSlots : team.weekdayAfternoonSlots,
+          available: isWeekendDay ? team.weekendAfternoonSlots : team.weekdayAfternoonSlots
+        },
+        NIGHT: { 
+          used: 0, 
+          total: isWeekendDay ? team.weekendNightSlots : team.weekdayNightSlots,
+          available: isWeekendDay ? team.weekendNightSlots : team.weekdayNightSlots
+        },
+      };
+    }
+    
+    // Contar plantões existentes
     events.forEach(event => {
       const date = event.start;
       const period = event.extendedProps?.period as ShiftPeriod;
       
-      if (!slots[date]) {
-        slots[date] = {
-          MORNING: { used: 0, total: 0 },
-          INTERMEDIATE: { used: 0, total: 0 },
-          AFTERNOON: { used: 0, total: 0 },
-          NIGHT: { used: 0, total: 0 },
-        };
-      }
-      
-      if (period) {
+      if (slots[date] && period) {
         slots[date][period].used++;
+        slots[date][period].available = slots[date][period].total - slots[date][period].used;
       }
-    });
-    
-    // Definir totais baseado em dia útil ou fim de semana/feriado
-    Object.keys(slots).forEach(dateStr => {
-      const date = new Date(dateStr);
-      const isWeekendDay = date.getDay() === 0 || date.getDay() === 6;
-      
-      slots[dateStr].MORNING.total = isWeekendDay ? team.weekendMorningSlots : team.weekdayMorningSlots;
-      slots[dateStr].INTERMEDIATE.total = isWeekendDay ? team.weekendIntermediateSlots : team.weekdayIntermediateSlots;
-      slots[dateStr].AFTERNOON.total = isWeekendDay ? team.weekendAfternoonSlots : team.weekdayAfternoonSlots;
-      slots[dateStr].NIGHT.total = isWeekendDay ? team.weekendNightSlots : team.weekdayNightSlots;
     });
     
     return slots;
-  }, [events, viewingTeamId, teams]);
+  }, [events, viewingTeamId, teams, currentMonth]);
 
   // Handler para quando o calendário muda de mês
   const handleDatesSet = (dateInfo: any) => {
@@ -475,31 +539,51 @@ export default function ShiftCalendar() {
       <div className="bg-white rounded-xl border shadow-sm p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           {/* Seletor de Equipe */}
-          <div className="flex-1 max-w-sm">
-            <Label className="text-sm font-medium text-gray-700 mb-2 block">
-              Equipe
-            </Label>
-            <Select
-              value={viewingTeamId}
-              onValueChange={setViewingTeamId}
-              disabled={currentUser?.role === 'USER'}
-            >
-              <SelectTrigger className="w-full h-11 bg-gray-50 border-gray-200">
-                <SelectValue placeholder="Selecione uma equipe" />
-              </SelectTrigger>
-              <SelectContent>
-                {teams.map(team => (
-                  <SelectItem key={team.id} value={team.id.toString()}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {currentUser?.role === 'USER' && (
-              <p className="text-xs text-gray-500 mt-1.5">
-                Visualizando sua equipe
-              </p>
-            )}
+          <div className="flex-1 max-w-sm space-y-3">
+            <div>
+              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                Equipe
+              </Label>
+              <Select
+                value={viewAllTeams ? 'all' : viewingTeamId}
+                onValueChange={(value) => {
+                  if (value === 'all') {
+                    setViewAllTeams(true);
+                    setViewingTeamId('');
+                  } else {
+                    setViewAllTeams(false);
+                    setViewingTeamId(value);
+                  }
+                }}
+                disabled={currentUser?.role === 'USER'}
+              >
+                <SelectTrigger className="w-full h-11 bg-gray-50 border-gray-200">
+                  <SelectValue placeholder="Selecione uma equipe" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currentUser?.role === 'ADMIN' && (
+                    <SelectItem value="all" className="font-semibold text-indigo-600">
+                      📊 Todas as Equipes (Visão Gerencial)
+                    </SelectItem>
+                  )}
+                  {teams.map(team => (
+                    <SelectItem key={team.id} value={team.id.toString()}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {currentUser?.role === 'USER' && (
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Visualizando sua equipe
+                </p>
+              )}
+              {viewAllTeams && currentUser?.role === 'ADMIN' && (
+                <p className="text-xs text-indigo-600 mt-1.5 font-medium">
+                  ✓ Visualizando todas as equipes
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Resumo do mês */}
@@ -664,6 +748,17 @@ export default function ShiftCalendar() {
               const dayNumber = dateObj.getDate();
               const monthName = dateObj.toLocaleDateString('pt-BR', { month: 'short' });
               
+              // Calcular vagas disponíveis (apenas para ADMIN)
+              const daySlots = availableSlots[date];
+              let totalAvailable = 0;
+              let totalSlots = 0;
+              if (currentUser?.role === 'ADMIN' && daySlots && !viewAllTeams) {
+                totalAvailable = Object.values(daySlots).reduce((sum, slot) => sum + slot.available, 0);
+                totalSlots = Object.values(daySlots).reduce((sum, slot) => sum + slot.total, 0);
+              }
+              const hasEmptySlots = totalAvailable > 0 && totalAvailable < totalSlots;
+              const isCritical = totalAvailable > 0 && totalAvailable <= 2;
+              
               return (
                 <Card key={date} className={isToday ? 'border-indigo-500 border-2' : ''}>
                   <CardHeader className="pb-3">
@@ -673,13 +768,23 @@ export default function ShiftCalendar() {
                           <span className="text-xs font-medium uppercase">{dayName}</span>
                           <span className="text-xl font-bold">{dayNumber}</span>
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <p className="font-semibold text-gray-900 capitalize">
                             {dateObj.toLocaleDateString('pt-BR', { weekday: 'long' })}
                           </p>
                           <p className="text-sm text-gray-500 capitalize">
                             {dayNumber} de {monthName}
                           </p>
+                          {/* Alerta de vagas disponíveis - ADMIN only */}
+                          {currentUser?.role === 'ADMIN' && hasEmptySlots && !viewAllTeams && (
+                            <div className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                              isCritical 
+                                ? 'bg-red-100 text-red-700 border border-red-300' 
+                                : 'bg-amber-100 text-amber-700 border border-amber-300'
+                            }`}>
+                              {isCritical ? '⚠️ Crítico:' : '⚡'} {totalAvailable} vaga{totalAvailable !== 1 ? 's' : ''} disponível{totalAvailable !== 1 ? 'is' : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">
@@ -820,6 +925,38 @@ export default function ShiftCalendar() {
                       {event.title}
                     </div>
                   </div>
+                </div>
+              );
+            }}
+            dayCellContent={(arg) => {
+              if (currentUser?.role !== 'ADMIN' || viewAllTeams) return arg.dayNumberText;
+              
+              const dateStr = arg.date.toISOString().split('T')[0];
+              const daySlots = availableSlots[dateStr];
+              
+              if (!daySlots) return arg.dayNumberText;
+              
+              // Calcular total de vagas disponíveis no dia
+              const totalAvailable = Object.values(daySlots).reduce((sum, slot) => sum + slot.available, 0);
+              const totalSlots = Object.values(daySlots).reduce((sum, slot) => sum + slot.total, 0);
+              const hasEmptySlots = totalAvailable > 0 && totalAvailable < totalSlots;
+              const isCritical = totalAvailable > 0 && totalAvailable <= 2;
+              
+              return (
+                <div className="fc-daygrid-day-number-custom">
+                  <span>{arg.dayNumberText}</span>
+                  {hasEmptySlots && (
+                    <div 
+                      className={`inline-flex items-center justify-center ml-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                        isCritical 
+                          ? 'bg-red-100 text-red-700 border border-red-300' 
+                          : 'bg-amber-100 text-amber-700 border border-amber-300'
+                      }`}
+                      title={`${totalAvailable} vaga(s) disponível(is) de ${totalSlots}`}
+                    >
+                      {isCritical ? '⚠️' : '!'} {totalAvailable}
+                    </div>
+                  )}
                 </div>
               );
             }}
