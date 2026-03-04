@@ -8,6 +8,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { ShiftTeam, ShiftPeriod } from '@prisma/client';
 import ptBrLocale from '@fullcalendar/core/locales/pt-br';
 import { toast } from 'sonner';
+import '../app/plantoes/calendar-custom.css';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,8 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Calendar, Users, TrendingUp, Clock } from 'lucide-react';
 // Removido import getCurrentUser - agora usamos API route
 
 const periodColor: Record<ShiftPeriod, string> = {
@@ -111,6 +114,14 @@ export default function ShiftCalendar() {
         const dateObj = new Date(shift.date);
         const dateStr = dateObj.toISOString().split('T')[0];
         
+        // Traduzir período para português
+        const periodNames: Record<ShiftPeriod, string> = {
+          MORNING: 'Manhã',
+          INTERMEDIATE: 'Intermediário',
+          AFTERNOON: 'Tarde',
+          NIGHT: 'Noite',
+        };
+        
         return {
           id: shift.id.toString(),
           title: shift.physiotherapist.name,
@@ -121,8 +132,11 @@ export default function ShiftCalendar() {
           extendedProps: {
             physioId: shift.physiotherapistId,
             teamId: shift.shiftTeamId,
+            teamName: shift.shiftTeam.name,
             period: shift.period,
+            periodName: periodNames[shift.period as ShiftPeriod],
             periodOrder: periodOrderMap[shift.period as ShiftPeriod],
+            physioName: shift.physiotherapist.name,
           },
         };
       });
@@ -316,6 +330,33 @@ export default function ShiftCalendar() {
     return currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   }, [currentMonth]);
 
+  // Estatísticas adicionais para o dashboard
+  const dashboardStats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    
+    const shiftsToday = events.filter(e => e.start === todayStr).length;
+    
+    // Fisioterapeutas únicos no mês
+    const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    const uniquePhysios = new Set();
+    
+    events.forEach(e => {
+      const eventDate = new Date(e.start);
+      if (eventDate >= monthStart && eventDate <= monthEnd) {
+        uniquePhysios.add(e.extendedProps?.physioId);
+      }
+    });
+    
+    return {
+      today: shiftsToday,
+      uniquePhysios: uniquePhysios.size,
+      monthTotal: stats.total,
+    };
+  }, [events, currentMonth, stats.total]);
+
   // Handler para quando o calendário muda de mês
   const handleDatesSet = (dateInfo: any) => {
     // Pegar o meio do range visível para determinar o mês
@@ -403,6 +444,79 @@ export default function ShiftCalendar() {
         </div>
       </div>
 
+      {/* Dashboard de Resumo */}
+      {viewingTeamId && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Plantões Hoje
+              </CardTitle>
+              <Calendar className="h-4 w-4 text-indigo-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {dashboardStats.today}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {dashboardStats.today === 0 ? 'Nenhum plantão' : dashboardStats.today === 1 ? '1 plantão agendado' : `${dashboardStats.today} plantões agendados`}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Fisioterapeutas
+              </CardTitle>
+              <Users className="h-4 w-4 text-emerald-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {dashboardStats.uniquePhysios}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Atuando este mês
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total no Mês
+              </CardTitle>
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {dashboardStats.monthTotal}
+              </div>
+              <p className="text-xs text-gray-500 mt-1 capitalize">
+                {currentMonthName}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Média por Período
+              </CardTitle>
+              <Clock className="h-4 w-4 text-violet-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {dashboardStats.monthTotal > 0 ? Math.round(dashboardStats.monthTotal / 4) : 0}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Plantões por turno
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Calendário */}
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
         <div className="p-4 md:p-6">
@@ -437,6 +551,24 @@ export default function ShiftCalendar() {
               const bo = b?.extendedProps?.periodOrder ?? 999;
               if (ao !== bo) return ao - bo;
               return (a.title || '').localeCompare(b.title || '');
+            }}
+            eventContent={(arg) => {
+              const { event } = arg;
+              const periodName = event.extendedProps?.periodName || '';
+              const teamName = event.extendedProps?.teamName || '';
+              
+              return (
+                <div 
+                  className="fc-event-main-frame"
+                  title={`${event.title}\n${periodName}\nEquipe: ${teamName}\nClique para editar`}
+                >
+                  <div className="fc-event-title-container">
+                    <div className="fc-event-title fc-sticky">
+                      {event.title}
+                    </div>
+                  </div>
+                </div>
+              );
             }}
             height="auto"
           />
