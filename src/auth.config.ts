@@ -12,8 +12,14 @@ export const authConfig = {
       const isOnDashboard = nextUrl.pathname.startsWith('/');
       const isOnLogin = nextUrl.pathname.startsWith('/login');
       const isOnSetup = nextUrl.pathname.startsWith('/setup');
+      const isOnChangePassword = nextUrl.pathname.startsWith('/change-password');
       
-      if (isOnDashboard && !isOnLogin && !isOnSetup) {
+      // Permitir acesso à página de troca de senha se estiver logado
+      if (isOnChangePassword && isLoggedIn) {
+        return true;
+      }
+      
+      if (isOnDashboard && !isOnLogin && !isOnSetup && !isOnChangePassword) {
         if (isLoggedIn) return true;
         return false;
       } else if (isLoggedIn && (isOnLogin || isOnSetup)) {
