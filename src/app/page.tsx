@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import AuthLayout from '@/components/AuthLayout';
 import Link from 'next/link';
 
@@ -30,9 +32,18 @@ const periodLabels: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentShifts, setRecentShifts] = useState<RecentShift[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Redirecionar usuários USER para dashboard específica
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user?.role === 'USER') {
+      router.push('/dashboard-user');
+    }
+  }, [status, session, router]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {

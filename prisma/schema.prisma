@@ -39,6 +39,9 @@ model Physiotherapist {
   shifts          Shift[]
   users           User[]                  @relation("UserPhysiotherapist") // Um fisioterapeuta pode ter múltiplos usuários
   paymentRecords  PaymentRecord[]         @relation("PaymentRecords")
+  swapRequests    ShiftSwapRequest[]      @relation("SwapRequester")      // Trocas solicitadas
+  swapTargets     ShiftSwapRequest[]      @relation("SwapTarget")         // Trocas direcionadas a este fisio
+  swapResponses   ShiftSwapRequest[]      @relation("SwapResponder")      // Trocas respondidas
 }
 
 model ShiftTeam {
@@ -76,8 +79,34 @@ model Shift {
   updatedAt         DateTime        @updatedAt
   physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id])
   shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id])
+  swapRequests      ShiftSwapRequest[] // Solicitações de troca para este plantão
 
   @@unique([date, period, physiotherapistId])
+}
+
+// ==========================================
+// SISTEMA DE TROCAS DE PLANTÕES
+// ==========================================
+
+model ShiftSwapRequest {
+  id                Int             @id @default(autoincrement())
+  shiftId           Int             // Plantão que quer trocar
+  requesterId       Int             // Quem está pedindo a troca
+  targetPhysioId    Int?            // Para quem está oferecendo (null = aberto para todos)
+  status            SwapStatus      @default(PENDING)
+  reason            String?         // Motivo da troca
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  respondedAt       DateTime?
+  responderId       Int?            // Quem aceitou a troca
+  approvedBy        Int?            // Gestor/Admin que aprovou (se necessário)
+  approvedAt        DateTime?       // Data de aprovação
+  
+  shift             Shift           @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requester         Physiotherapist @relation("SwapRequester", fields: [requesterId], references: [id])
+  targetPhysio      Physiotherapist? @relation("SwapTarget", fields: [targetPhysioId], references: [id])
+  responder         Physiotherapist? @relation("SwapResponder", fields: [responderId], references: [id])
+  approver          User?           @relation("SwapApprover", fields: [approvedBy], references: [id])
 }
 
 model User {
@@ -95,6 +124,7 @@ model User {
   creator            User?            @relation("UserCreator", fields: [createdBy], references: [id])
   createdUsers       User[]           @relation("UserCreator")
   physiotherapist    Physiotherapist? @relation("UserPhysiotherapist", fields: [physiotherapistId], references: [id])
+  swapApprovals      ShiftSwapRequest[] @relation("SwapApprover")
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
@@ -120,6 +150,17 @@ model Holiday {
   updatedAt   DateTime @updatedAt
 }
 
+// ==========================================
+// CONFIGURAÇÕES DO SISTEMA
+// ==========================================
+
+model SystemSettings {
+  id                        Int      @id @default(autoincrement())
+  swapRequiresApproval      Boolean  @default(true)  // Se trocas precisam de aprovação de gestor/admin
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
 enum ContractStatus {
   ACTIVE
   INACTIVE
@@ -142,6 +183,15 @@ enum ShiftPeriod {
   INTERMEDIATE
   AFTERNOON
   NIGHT
+}
+
+enum SwapStatus {
+  PENDING           // Aguardando resposta do fisioterapeuta
+  PENDING_APPROVAL  // Aguardando aprovação do gestor/admin
+  ACCEPTED          // Aceito
+  REJECTED          // Rejeitado
+  CANCELLED         // Cancelado pelo solicitante
+  EXPIRED           // Expirado (após X dias)
 }
 
 // ==========================================

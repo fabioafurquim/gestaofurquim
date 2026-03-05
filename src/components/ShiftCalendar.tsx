@@ -1093,11 +1093,17 @@ export default function ShiftCalendar() {
               Editar Plantão
             </DialogTitle>
             <p className="text-sm text-gray-500">
-              {selectedEvent && new Date(selectedEvent.start + 'T12:00:00').toLocaleDateString('pt-BR', { 
-                weekday: 'long', 
-                day: 'numeric', 
-                month: 'long' 
-              })}
+              {(() => {
+                if (!selectedEvent?.start) return null;
+                const dt = new Date(selectedEvent.start);
+                return isNaN(dt.getTime())
+                  ? null
+                  : dt.toLocaleDateString('pt-BR', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                    });
+              })()}
             </p>
           </DialogHeader>
           
@@ -1146,13 +1152,26 @@ export default function ShiftCalendar() {
           </div>
 
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-            <Button 
-              variant="destructive" 
-              onClick={handleDeleteShift}
-              className="h-12 text-base w-full sm:w-auto"
-            >
-              🗑️ Excluir Plantão
-            </Button>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteShift}
+                className="h-12 text-base flex-1 sm:flex-none"
+              >
+                🗑️ Excluir
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  if (selectedEvent?.id) {
+                    window.location.href = `/swap-board?shiftId=${selectedEvent.id}`;
+                  }
+                }}
+                className="h-12 text-base flex-1 sm:flex-none"
+              >
+                🔄 Trocar
+              </Button>
+            </div>
             <div className="flex gap-2 w-full sm:w-auto">
               <Button 
                 variant="outline" 
