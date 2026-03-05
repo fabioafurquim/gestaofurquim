@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -46,6 +46,7 @@ const periodOrderMap: Record<ShiftPeriod, number> = {
 
 export default function ShiftCalendar() {
   const { data: session } = useSession();
+  const calendarRef = useRef<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -334,6 +335,9 @@ export default function ShiftCalendar() {
     const shiftId = event.id;
     const newDate = event.startStr;
     
+    // Salvar a data atual do calendário antes de recarregar
+    const currentCalendarDate = calendarRef.current?.getApi().getDate();
+    
     console.log('Drag and drop - salvando:', { shiftId, newDate, physioId: event.extendedProps.physioId, period: event.extendedProps.period });
     
     try {
@@ -357,6 +361,14 @@ export default function ShiftCalendar() {
         toast.success('Plantão movido com sucesso');
         // Recarregar os plantões do servidor para garantir sincronização
         await fetchShifts(viewingTeamId);
+        
+        // Restaurar a data do calendário após recarregar
+        setTimeout(() => {
+          if (currentCalendarDate && calendarRef.current) {
+            calendarRef.current.getApi().gotoDate(currentCalendarDate);
+          }
+        }, 100);
+        
         // Forçar re-render do calendário para atualizar badges
         setRefreshKey(prev => prev + 1);
       }
@@ -881,6 +893,7 @@ export default function ShiftCalendar() {
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
           <div className="p-4 md:p-6">
             <FullCalendar
+            ref={calendarRef}
             key={`calendar-${viewingTeamId}-${viewAllTeams}-${refreshKey}`}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
