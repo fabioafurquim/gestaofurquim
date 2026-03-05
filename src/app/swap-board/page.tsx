@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import AuthLayout from '@/components/AuthLayout';
@@ -85,7 +85,7 @@ const statusColors = {
   EXPIRED: 'bg-gray-100 text-gray-800',
 };
 
-export default function SwapBoardPage() {
+function SwapBoardContent() {
   const { data: session, status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
   const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([]);
@@ -590,5 +590,19 @@ export default function SwapBoardPage() {
         )}
       </div>
     </AuthLayout>
+  );
+}
+
+export default function SwapBoardPage() {
+  return (
+    <Suspense fallback={
+      <AuthLayout title="Mural de Trocas">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </AuthLayout>
+    }>
+      <SwapBoardContent />
+    </Suspense>
   );
 }
