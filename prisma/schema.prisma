@@ -67,6 +67,7 @@ model ShiftTeam {
   updatedAt                 DateTime                @updatedAt
   physiotherapists          PhysiotherapistTeam[]   // Relação many-to-many com fisioterapeutas
   shifts                    Shift[]
+  priceHistory              ShiftTeamPriceHistory[] // Histórico de alterações de valor
 }
 
 model Shift {
@@ -110,33 +111,36 @@ model ShiftSwapRequest {
 }
 
 model User {
-  id                 Int              @id @default(autoincrement())
-  email              String           @unique
-  name               String
-  password           String
-  role               UserRole         @default(USER)
-  isFirstLogin       Boolean          @default(true)
-  mustChangePassword Boolean          @default(true)
-  physiotherapistId  Int?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  createdBy          Int?
-  creator            User?            @relation("UserCreator", fields: [createdBy], references: [id])
-  createdUsers       User[]           @relation("UserCreator")
-  physiotherapist    Physiotherapist? @relation("UserPhysiotherapist", fields: [physiotherapistId], references: [id])
-  swapApprovals      ShiftSwapRequest[] @relation("SwapApprover")
+  id                              Int                                  @id @default(autoincrement())
+  email                           String                               @unique
+  name                            String
+  password                        String
+  role                            UserRole                             @default(USER)
+  isFirstLogin                    Boolean                              @default(true)
+  mustChangePassword              Boolean                              @default(true)
+  physiotherapistId               Int?
+  createdAt                       DateTime                             @default(now())
+  updatedAt                       DateTime                             @updatedAt
+  createdBy                       Int?
+  creator                         User?                                @relation("UserCreator", fields: [createdBy], references: [id])
+  createdUsers                    User[]                               @relation("UserCreator")
+  physiotherapist                 Physiotherapist?                     @relation("UserPhysiotherapist", fields: [physiotherapistId], references: [id])
+  swapApprovals                   ShiftSwapRequest[]                   @relation("SwapApprover")
+  teamPriceChanges                ShiftTeamPriceHistory[]              @relation("PriceChangeUser")
+  physiotherapistTeamPriceChanges PhysiotherapistTeamPriceHistory[]    @relation("CustomPriceChangeUser")
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
 model PhysiotherapistTeam {
-  id                Int             @id @default(autoincrement())
+  id                Int                                  @id @default(autoincrement())
   physiotherapistId Int
   shiftTeamId       Int
-  customShiftValue  Decimal?        @db.Decimal(10, 2) // Valor customizado do plantão para este fisioterapeuta nesta equipe
-  physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id], onDelete: Cascade)
-  shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  customShiftValue  Decimal?                             @db.Decimal(10, 2) // Valor customizado do plantão para este fisioterapeuta nesta equipe
+  physiotherapist   Physiotherapist                      @relation(fields: [physiotherapistId], references: [id], onDelete: Cascade)
+  shiftTeam         ShiftTeam                            @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
+  createdAt         DateTime                             @default(now())
+  updatedAt         DateTime                             @updatedAt
+  priceHistory      PhysiotherapistTeamPriceHistory[]    // Histórico de alterações de valor customizado
 
   @@unique([physiotherapistId, shiftTeamId])
 }
@@ -275,4 +279,36 @@ enum EmailStatus {
   PENDING
   SENT
   FAILED
+}
+
+// ==========================================
+// HISTÓRICO DE VALORES (AUDITORIA)
+// ==========================================
+
+model ShiftTeamPriceHistory {
+  id            Int       @id @default(autoincrement())
+  shiftTeamId   Int
+  shiftValue    Decimal   @db.Decimal(10, 2)
+  effectiveFrom DateTime  @default(now()) // Data a partir da qual o valor é válido
+  createdAt     DateTime  @default(now())
+  createdBy     Int?      // Usuário que fez a alteração
+  
+  shiftTeam     ShiftTeam @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
+  user          User?     @relation("PriceChangeUser", fields: [createdBy], references: [id])
+  
+  @@index([shiftTeamId, effectiveFrom])
+}
+
+model PhysiotherapistTeamPriceHistory {
+  id                    Int                 @id @default(autoincrement())
+  physiotherapistTeamId Int
+  customShiftValue      Decimal             @db.Decimal(10, 2)
+  effectiveFrom         DateTime            @default(now()) // Data a partir da qual o valor é válido
+  createdAt             DateTime            @default(now())
+  createdBy             Int?                // Usuário que fez a alteração
+  
+  physiotherapistTeam   PhysiotherapistTeam @relation(fields: [physiotherapistTeamId], references: [id], onDelete: Cascade)
+  user                  User?               @relation("CustomPriceChangeUser", fields: [createdBy], references: [id])
+  
+  @@index([physiotherapistTeamId, effectiveFrom])
 }
