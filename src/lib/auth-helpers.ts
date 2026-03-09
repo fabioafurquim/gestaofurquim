@@ -18,7 +18,8 @@ export async function getAuthenticatedUser() {
  * Helper para verificar autenticação e retornar erro 401 se não autenticado
  */
 export async function requireAuth() {
-  const user = await getAuthenticatedUser();
+  const session = await auth();
+  const user = session?.user || null;
   
   if (!user) {
     return {
@@ -26,11 +27,12 @@ export async function requireAuth() {
         { error: 'Acesso negado. Usuário não autenticado.' },
         { status: 401 }
       ),
-      user: null
+      user: null,
+      session: null
     };
   }
   
-  return { error: null, user };
+  return { error: null, user, session };
 }
 
 /**

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-helpers';
+import { countFutureShifts } from '@/lib/validations';
 
 export async function GET(
   request: Request,
@@ -170,11 +171,24 @@ export async function DELETE(
       return NextResponse.json({ error: 'Fisioterapeuta não encontrado' }, { status: 404 });
     }
 
-    // Excluir todos os plantões relacionados primeiro (devido às foreign keys)
-    await prisma.shift.deleteMany({
-      where: { physiotherapistId: id },
-    });
+    // VALIDAÇÃO CRÍTICA: Verificar plantões futuros
+    const futureShiftsInfo = await countFutureShifts(id);
 
+    if (futureShiftsInfo.total > 0) {
+      return NextResponse.json({
+        error: 'Não é possível excluir fisioterapeuta com plantões futuros',
+        message: `Este fisioterapeuta possui ${futureShiftsInfo.total} plantão(ões) futuro(s) agendado(s). Para manter a integridade dos dados, você deve:`,
+        suggestions: [
+          '1. Remover ou realocar todos os plantões futuros primeiro, OU',
+          '2. Inativar o fisioterapeuta ao invés de excluir (altere o status para INACTIVE)'
+        ],
+        futureShiftsCount: futureShiftsInfo.total,
+        shiftsByTeam: futureShiftsInfo.byTeam,
+        shifts: futureShiftsInfo.shifts,
+      }, { status: 400 });
+    }
+
+    // Se não houver plantões futuros, permitir exclusão
     // Excluir o usuário relacionado se existir
     const relatedUser = await prisma.user.findFirst({
       where: { physiotherapistId: id },
@@ -186,7 +200,7 @@ export async function DELETE(
       });
     }
 
-    // Excluir o fisioterapeuta
+    // Excluir o fisioterapeuta (plantões passados serão mantidos por integridade histórica)
     await prisma.physiotherapist.delete({
       where: { id },
     });
