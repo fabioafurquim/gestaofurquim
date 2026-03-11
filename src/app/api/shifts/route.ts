@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import { isWeekend, isHoliday } from '@/lib/date-utils';
+import { sendInstantNotification } from '@/lib/notifications';
 
 // GET all shifts for a specific team
 export async function GET(request: NextRequest) {
@@ -202,6 +203,11 @@ export async function POST(request: Request) {
         shiftTeam: { connect: { id: Number(shiftTeamId) } },
       },
     });
+
+    sendInstantNotification(shift.id).catch((error) => {
+      console.error('Erro ao enviar notificação instantânea:', error);
+    });
+
     return NextResponse.json({ message: 'Plantão criado com sucesso', shift }, { status: 201 });
   } catch (error: any) {
     console.error("Erro ao criar plantão:", error);

@@ -42,6 +42,9 @@ model Physiotherapist {
   swapRequests    ShiftSwapRequest[]      @relation("SwapRequester")      // Trocas solicitadas
   swapTargets     ShiftSwapRequest[]      @relation("SwapTarget")         // Trocas direcionadas a este fisio
   swapResponses   ShiftSwapRequest[]      @relation("SwapResponder")      // Trocas respondidas
+  telegramChatId  String?                                                 // ID do chat do Telegram
+  telegramUsername String?                                                // @username do Telegram
+  notificationLogs NotificationLog[]      @relation("PhysiotherapistNotifications")
 }
 
 model ShiftTeam {
@@ -81,6 +84,7 @@ model Shift {
   physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id])
   shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id])
   swapRequests      ShiftSwapRequest[] // Solicitações de troca para este plantão
+  notificationLogs  NotificationLog[]  @relation("ShiftNotifications")
 
   @@unique([date, period, physiotherapistId])
 }
@@ -163,6 +167,38 @@ model SystemSettings {
   swapRequiresApproval      Boolean  @default(true)  // Se trocas precisam de aprovação de gestor/admin
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
+}
+
+model NotificationSettings {
+  id                        Int      @id @default(autoincrement())
+  enabled                   Boolean  @default(true)
+  dailyReminderEnabled      Boolean  @default(true)
+  dailyReminderTime         String   @default("18:00") // Horário do lembrete diário
+  instantNotificationEnabled Boolean @default(true)
+  
+  // Templates de mensagem personalizáveis
+  dailyReminderTemplate     String   @default("🏥 Lembrete de Plantão\n\nOlá, {{name}}! 👋\n\nVocê está escalado para amanhã:\n\n📅 Data: {{date}}\n⏰ Período: {{period}}\n🏢 Equipe: {{team}}\n\nBoa sorte! 💪")
+  instantNotificationTemplate String @default("✅ Novo Plantão Cadastrado\n\nOlá, {{name}}!\n\nVocê foi escalado para:\n\n📅 Data: {{date}}\n⏰ Período: {{period}}\n🏢 Equipe: {{team}}\n\nConfira no sistema!")
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model NotificationLog {
+  id                Int             @id @default(autoincrement())
+  physiotherapistId Int
+  shiftId           Int?
+  sentAt            DateTime        @default(now())
+  status            String          // 'sent', 'failed', 'pending'
+  platform          String          @default("telegram") // 'telegram', 'whatsapp', 'email'
+  messageType       String          // 'daily_reminder', 'instant_notification'
+  errorMessage      String?
+  
+  physiotherapist   Physiotherapist @relation("PhysiotherapistNotifications", fields: [physiotherapistId], references: [id], onDelete: Cascade)
+  shift             Shift?          @relation("ShiftNotifications", fields: [shiftId], references: [id], onDelete: SetNull)
+  
+  @@index([physiotherapistId, sentAt])
+  @@index([shiftId])
 }
 
 enum ContractStatus {
