@@ -84,8 +84,12 @@ export default function TelegramAdminPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Webhook configurado com sucesso!');
-        await loadTelegramStatus();
+        setSuccess('Webhook configurado com sucesso! Atualizando status...');
+        // Aguardar um pouco para o Telegram processar
+        setTimeout(async () => {
+          await loadTelegramStatus();
+          setSuccess('Webhook configurado com sucesso!');
+        }, 1500);
       } else {
         setError(data.error || 'Erro ao configurar webhook');
       }
@@ -115,8 +119,11 @@ export default function TelegramAdminPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Webhook removido com sucesso!');
-        await loadTelegramStatus();
+        setSuccess('Webhook removido com sucesso! Atualizando status...');
+        setTimeout(async () => {
+          await loadTelegramStatus();
+          setSuccess('Webhook removido com sucesso!');
+        }, 1500);
       } else {
         setError(data.error || 'Erro ao remover webhook');
       }
