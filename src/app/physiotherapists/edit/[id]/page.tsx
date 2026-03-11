@@ -343,6 +343,49 @@ export default function EditPhysiotherapistPage() {
             <input type="text" className="form-control" id="chavePix" value={(physio as any).chavePix ?? ''} onChange={handleChavePixChange} />
           </div>
         </div>
+
+        {/* Seção de Telegram */}
+        <h4 className="mt-4 mb-3">🤖 Telegram</h4>
+        <div className="alert alert-info">
+          <small>
+            <strong>Como vincular:</strong>
+            <ol className="mb-0 mt-2">
+              <li>Fisioterapeuta deve abrir o Telegram e buscar pelo bot</li>
+              <li>Clicar em START e enviar o comando <code>/start</code></li>
+              <li>O bot mostrará o Chat ID</li>
+              <li>Cole o Chat ID no campo abaixo e salve</li>
+            </ol>
+          </small>
+        </div>
+        <div className="row">
+          <div className="col-md-6 mb-3">
+            <label htmlFor="telegramChatId" className="form-label">Chat ID do Telegram</label>
+            <input 
+              type="text" 
+              className="form-control" 
+              id="telegramChatId" 
+              value={(physio as any).telegramChatId ?? ''} 
+              onChange={(e) => setPhysio({ ...physio, telegramChatId: e.target.value } as any)}
+              placeholder="Ex: 123456789"
+            />
+            <small className="text-muted">
+              {(physio as any).telegramChatId 
+                ? '✅ Telegram vinculado' 
+                : '⚠️ Telegram não vinculado - fisioterapeuta não receberá notificações'}
+            </small>
+          </div>
+          <div className="col-md-6 mb-3">
+            <label htmlFor="telegramUsername" className="form-label">@Username (opcional)</label>
+            <input 
+              type="text" 
+              className="form-control" 
+              id="telegramUsername" 
+              value={(physio as any).telegramUsername ?? ''} 
+              onChange={(e) => setPhysio({ ...physio, telegramUsername: e.target.value } as any)}
+              placeholder="Ex: @joaosilva"
+            />
+          </div>
+        </div>
         
         {/* Seção de Informações da Empresa (apenas para PJ) */}
         {physio.contractType === 'PJ' && (

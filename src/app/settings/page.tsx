@@ -42,6 +42,8 @@ export default function SettingsPage() {
   const [testingNotifications, setTestingNotifications] = useState(false);
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
   const [testResult, setTestResult] = useState<{ total: number; sent: number; failed: number } | null>(null);
+  const [testError, setTestError] = useState('');
+  const [testSuccess, setTestSuccess] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -121,14 +123,22 @@ export default function SettingsPage() {
   const handleTestNotifications = async () => {
     try {
       setTestingNotifications(true);
-      setError('');
-      setSuccess('');
+      setTestError('');
+      setTestSuccess('');
       setTestResult(null);
       setNotificationLogs([]);
 
+      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET;
+      
+      if (!cronSecret) {
+        setTestError('❌ Erro: NEXT_PUBLIC_CRON_SECRET não configurado no .env.local');
+        setTestingNotifications(false);
+        return;
+      }
+
       const response = await fetch('/api/cron/notify-shifts', {
         headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET || ''}`,
+          'Authorization': `Bearer ${cronSecret}`,
         },
       });
 
@@ -137,18 +147,20 @@ export default function SettingsPage() {
         setTestResult(data);
 
         if (data.sent === 0 && data.total === 0) {
-          setSuccess('Nenhum plantão encontrado para amanhã. Nenhuma notificação foi enviada.');
+          setTestSuccess('ℹ️ Nenhum plantão cadastrado para amanhã. Cadastre um plantão para a data de amanhã e tente novamente.');
         } else if (data.sent > 0) {
-          setSuccess(`${data.sent} notificação(ões) enviada(s) com sucesso!`);
+          setTestSuccess(`✅ ${data.sent} notificação(ões) enviada(s) com sucesso!`);
           await fetchRecentLogs();
-        } else {
-          setError('Nenhuma notificação foi enviada. Verifique se há fisioterapeutas vinculados ao Telegram.');
+        } else if (data.total > 0 && data.sent === 0) {
+          setTestError(`⚠️ Encontrados ${data.total} plantão(ões) para amanhã, mas nenhuma notificação foi enviada. Verifique se os fisioterapeutas têm Telegram vinculado.`);
         }
       } else {
-        setError('Erro ao executar teste de notificações');
+        const errorData = await response.json().catch(() => ({}));
+        setTestError(`❌ Erro ao executar teste: ${errorData.error || 'Verifique se CRON_SECRET está correto'}`);
       }
     } catch (err) {
-      setError('Erro ao executar teste de notificações');
+      setTestError('❌ Erro ao executar teste de notificações. Verifique o console do navegador para mais detalhes.');
+      console.error('Erro detalhado:', err);
     } finally {
       setTestingNotifications(false);
     }
@@ -438,6 +450,19 @@ export default function SettingsPage() {
                 <p className="mt-2 text-xs text-gray-500 text-center">
                   Envia notificações para todos os plantões de amanhã (teste manual)
                 </p>
+
+                {/* Mensagens de Feedback do Teste - Logo abaixo do botão */}
+                {testSuccess && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-800">{testSuccess}</p>
+                  </div>
+                )}
+
+                {testError && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800">{testError}</p>
+                  </div>
+                )}
               </div>
 
               {/* Resultado do Teste */}
