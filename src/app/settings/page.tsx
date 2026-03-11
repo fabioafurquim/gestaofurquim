@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import AuthLayout from '@/components/AuthLayout';
 
+type TabType = 'shifts' | 'notifications' | 'telegram';
+
 interface SystemSettings {
   id: number;
   swapRequiresApproval: boolean;
@@ -32,14 +34,38 @@ interface NotificationLog {
   errorMessage?: string;
 }
 
+interface WebhookInfo {
+  url: string;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  max_connections?: number;
+  ip_address?: string;
+}
+
+interface BotInfo {
+  id: number;
+  is_bot: boolean;
+  first_name: string;
+  username: string;
+  can_join_groups: boolean;
+  can_read_all_group_messages: boolean;
+  supports_inline_queries: boolean;
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
+  const [activeTab, setActiveTab] = useState<TabType>('shifts');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [webhookInfo, setWebhookInfo] = useState<WebhookInfo | null>(null);
+  const [botInfo, setBotInfo] = useState<BotInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingNotifications, setTestingNotifications] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
   const [testResult, setTestResult] = useState<{ total: number; sent: number; failed: number } | null>(null);
   const [testError, setTestError] = useState('');
@@ -55,8 +81,17 @@ export default function SettingsPage() {
       }
       fetchSettings();
       fetchNotificationSettings();
+      if (activeTab === 'telegram') {
+        loadTelegramStatus();
+      }
     }
   }, [sessionStatus, session, router]);
+
+  useEffect(() => {
+    if (sessionStatus === 'authenticated' && session?.user?.role === 'ADMIN' && activeTab === 'telegram') {
+      loadTelegramStatus();
+    }
+  }, [activeTab, sessionStatus, session]);
 
   const fetchSettings = async () => {
     try {
@@ -178,6 +213,109 @@ export default function SettingsPage() {
     }
   };
 
+  const loadTelegramStatus = async () => {
+    try {
+      const response = await fetch('/api/admin/telegram/status');
+      if (response.ok) {
+        const data = await response.json();
+        setWebhookInfo(data.webhook);
+        setBotInfo(data.bot);
+      } else {
+        setError('Erro ao carregar status do Telegram');
+      }
+    } catch (err) {
+      console.error('Erro ao conectar com a API:', err);
+    }
+  };
+
+  const handleSetWebhook = async () => {
+    try {
+      setActionLoading(true);
+      setError('');
+      setSuccess('');
+
+      const response = await fetch('/api/admin/telegram/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set' }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Webhook configurado com sucesso! Atualizando status...');
+        setTimeout(async () => {
+          await loadTelegramStatus();
+          setSuccess('Webhook configurado com sucesso!');
+        }, 1500);
+      } else {
+        setError(data.error || 'Erro ao configurar webhook');
+      }
+    } catch (err) {
+      setError('Erro ao configurar webhook');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteWebhook = async () => {
+    if (!confirm('Tem certeza que deseja remover o webhook? O bot parará de receber mensagens.')) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setError('');
+      setSuccess('');
+
+      const response = await fetch('/api/admin/telegram/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete' }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Webhook removido com sucesso! Atualizando status...');
+        setTimeout(async () => {
+          await loadTelegramStatus();
+          setSuccess('Webhook removido com sucesso!');
+        }, 1500);
+      } else {
+        setError(data.error || 'Erro ao remover webhook');
+      }
+    } catch (err) {
+      setError('Erro ao remover webhook');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTestBot = async () => {
+    try {
+      setActionLoading(true);
+      setError('');
+      setSuccess('');
+
+      const response = await fetch('/api/admin/telegram/test', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess(`Bot testado com sucesso! Mensagem enviada para ${data.sentTo} fisioterapeuta(s)`);
+      } else {
+        setError(data.error || 'Erro ao testar bot');
+      }
+    } catch (err) {
+      setError('Erro ao testar bot');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleToggleSwapApproval = async () => {
     if (!settings) return;
 
@@ -233,9 +371,42 @@ export default function SettingsPage() {
     );
   }
 
+  const tabs = [
+    { id: 'shifts' as TabType, name: '⚙️ Plantões', description: 'Configurações de trocas de plantões' },
+    { id: 'notifications' as TabType, name: '🔔 Notificações', description: 'Notificações Telegram' },
+    { id: 'telegram' as TabType, name: '🤖 Telegram', description: 'Gerenciar bot e webhook' },
+  ];
+
   return (
-    <AuthLayout title="Configurações do Sistema">
+    <AuthLayout title="Configurações do Sistema" requiredRole="ADMIN">
       <div className="space-y-6">
+        {/* Tabs */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setError('');
+                  setSuccess('');
+                  setTestError('');
+                  setTestSuccess('');
+                }}
+                className={`
+                  whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                  ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }
+                `}
+              >
+                {tab.name}
+              </button>
+            ))}
+          </nav>
+        </div>
         {/* Mensagens */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
@@ -249,7 +420,8 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Seção de Trocas de Plantões */}
+        {/* Aba: Plantões */}
+        {activeTab === 'shifts' && (
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Trocas de Plantões</h2>
@@ -328,9 +500,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Seção de Notificações Telegram */}
-        {notificationSettings && (
+        {/* Aba: Notificações */}
+        {activeTab === 'notifications' && notificationSettings && (
           <div className="bg-white rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">🤖 Notificações Telegram</h2>
@@ -550,6 +723,157 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Aba: Telegram */}
+        {activeTab === 'telegram' && (
+          <>
+            {/* Informações do Bot */}
+            <div className="bg-white shadow rounded-lg">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-medium text-gray-900">🤖 Informações do Bot</h2>
+              </div>
+              <div className="px-6 py-4">
+                {botInfo ? (
+                  <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">Nome</dt>
+                      <dd className="mt-1 text-sm text-gray-900">{botInfo.first_name}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">Username</dt>
+                      <dd className="mt-1 text-sm text-gray-900">@{botInfo.username}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">ID</dt>
+                      <dd className="mt-1 text-sm text-gray-900">{botInfo.id}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">Status</dt>
+                      <dd className="mt-1">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          ✅ Ativo
+                        </span>
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-sm text-gray-500">Carregando informações do bot...</p>
+                )}
+              </div>
+            </div>
+
+            {/* Status do Webhook */}
+            <div className="bg-white shadow rounded-lg">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-medium text-gray-900">🔗 Status do Webhook</h2>
+              </div>
+              <div className="px-6 py-4">
+                {webhookInfo ? (
+                  <div className="space-y-4">
+                    <dl className="grid grid-cols-1 gap-4">
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">URL do Webhook</dt>
+                        <dd className="mt-1 text-sm text-gray-900 break-all">
+                          {webhookInfo.url || <span className="text-red-600">❌ Não configurado</span>}
+                        </dd>
+                      </div>
+                      {webhookInfo.url && (
+                        <>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">Mensagens Pendentes</dt>
+                            <dd className="mt-1 text-sm text-gray-900">{webhookInfo.pending_update_count}</dd>
+                          </div>
+                          {webhookInfo.last_error_message && (
+                            <div>
+                              <dt className="text-sm font-medium text-red-500">Último Erro</dt>
+                              <dd className="mt-1 text-sm text-red-600">{webhookInfo.last_error_message}</dd>
+                              {webhookInfo.last_error_date && (
+                                <dd className="mt-1 text-xs text-gray-500">
+                                  {new Date(webhookInfo.last_error_date * 1000).toLocaleString('pt-BR')}
+                                </dd>
+                              )}
+                            </div>
+                          )}
+                          {webhookInfo.ip_address && (
+                            <div>
+                              <dt className="text-sm font-medium text-gray-500">IP do Servidor</dt>
+                              <dd className="mt-1 text-sm text-gray-900">{webhookInfo.ip_address}</dd>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </dl>
+
+                    <div className="flex gap-3 pt-4 border-t">
+                      {!webhookInfo.url ? (
+                        <button
+                          onClick={handleSetWebhook}
+                          disabled={actionLoading}
+                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          {actionLoading ? 'Configurando...' : '🔗 Configurar Webhook'}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={handleSetWebhook}
+                            disabled={actionLoading}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                          >
+                            {actionLoading ? 'Atualizando...' : '🔄 Reconfigurar Webhook'}
+                          </button>
+                          <button
+                            onClick={handleDeleteWebhook}
+                            disabled={actionLoading}
+                            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                          >
+                            {actionLoading ? 'Removendo...' : '🗑️ Remover Webhook'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">Carregando informações do webhook...</p>
+                )}
+              </div>
+            </div>
+
+            {/* Ações */}
+            <div className="bg-white shadow rounded-lg">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-medium text-gray-900">🛠️ Ações</h2>
+              </div>
+              <div className="px-6 py-4 space-y-3">
+                <button
+                  onClick={handleTestBot}
+                  disabled={actionLoading}
+                  className="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Testando...' : '🧪 Testar Bot (Enviar Mensagem de Teste)'}
+                </button>
+                <button
+                  onClick={loadTelegramStatus}
+                  disabled={actionLoading}
+                  className="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Atualizando...' : '🔄 Atualizar Status'}
+                </button>
+              </div>
+            </div>
+
+            {/* Documentação */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <h3 className="text-sm font-medium text-blue-900 mb-2">📚 Informações Importantes</h3>
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li><strong>Desenvolvimento:</strong> Use o script de polling (node scripts/telegram-polling.js)</li>
+                <li><strong>Produção:</strong> Configure o webhook apontando para https://fisio.furquim.cloud/api/telegram/webhook</li>
+                <li><strong>Webhook:</strong> Só funciona com HTTPS válido (certificado SSL)</li>
+                <li><strong>Cron Jobs:</strong> Configure no Coolify para executar notificações diárias</li>
+              </ul>
+            </div>
+          </>
         )}
       </div>
     </AuthLayout>
