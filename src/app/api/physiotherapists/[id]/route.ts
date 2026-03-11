@@ -67,6 +67,9 @@ export async function PUT(
     nomeEmpresa,
     cnpjEmpresa,
     enderecoEmpresa,
+    // Campos Telegram
+    telegramChatId,
+    telegramUsername,
   } = body;
 
   const updateData: any = {
@@ -95,24 +98,71 @@ export async function PUT(
     nomeEmpresa: contractType === 'PJ' ? (nomeEmpresa ?? null) : null,
     cnpjEmpresa: contractType === 'PJ' ? (cnpjEmpresa ?? null) : null,
     enderecoEmpresa: contractType === 'PJ' ? (enderecoEmpresa ?? null) : null,
+    // Campos Telegram
+    ...(telegramChatId !== undefined ? { telegramChatId: telegramChatId || null } : {}),
+    ...(telegramUsername !== undefined ? { telegramUsername: telegramUsername || null } : {}),
   };
 
   try {
-    // Primeiro, atualizar os dados básicos do fisioterapeuta
+    // Verifica se o fisioterapeuta existe
+    const existing = await prisma.physiotherapist.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return NextResponse.json({
+        error: 'Fisioterapeuta não encontrado.',
+      }, { status: 404 });
+    }
+
+    // Verifica se CPF já existe em outro fisioterapeuta
+    if (cpf && cpf !== existing.cpf) {
+      const existingCpf = await prisma.physiotherapist.findUnique({
+        where: { cpf },
+      });
+      if (existingCpf) {
+        return NextResponse.json({
+          error: 'CPF já cadastrado. Este CPF já está em uso por outro fisioterapeuta.',
+        }, { status: 400 });
+      }
+    }
+
+    // Verifica se CREFITO já existe em outro fisioterapeuta
+    if (crefito && crefito !== existing.crefito) {
+      const existingCrefito = await prisma.physiotherapist.findUnique({
+        where: { crefito },
+      });
+      if (existingCrefito) {
+        return NextResponse.json({
+          error: 'CREFITO já cadastrado. Este número de registro já está em uso por outro fisioterapeuta.',
+        }, { status: 400 });
+      }
+    }
+
+    // Verifica se Email já existe em outro fisioterapeuta
+    if (email && email !== existing.email) {
+      const existingEmail = await prisma.physiotherapist.findUnique({
+        where: { email },
+      });
+      if (existingEmail) {
+        return NextResponse.json({
+          error: 'Email já cadastrado. Este email já está em uso por outro fisioterapeuta.',
+        }, { status: 400 });
+      }
+    }
+
+    // Atualizar os dados básicos do fisioterapeuta
     const updatedPhysiotherapist = await prisma.physiotherapist.update({
       where: { id },
       data: updateData,
     });
 
     // Se teamIds foi fornecido, atualizar as relações com equipes
-    // teamIds pode ser um array simples [1, 2, 3] ou um array de objetos [{teamId: 1, customShiftValue: 100}, ...]
     if (teamIds !== undefined && Array.isArray(teamIds)) {
-      // Remover todas as relações existentes
       await prisma.physiotherapistTeam.deleteMany({
         where: { physiotherapistId: id }
       });
 
-      // Criar novas relações
       if (teamIds.length > 0) {
         const teamsData = teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
           if (typeof team === 'number') {
@@ -121,7 +171,6 @@ export async function PUT(
               shiftTeamId: team
             };
           }
-          // Só incluir customShiftValue se o campo existir no schema
           const teamData: any = {
             physiotherapistId: id,
             shiftTeamId: team.teamId
@@ -142,8 +191,38 @@ export async function PUT(
       }
     }
     return NextResponse.json(updatedPhysiotherapist);
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro ao atualizar fisioterapeuta' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Erro ao atualizar fisioterapeuta:', error);
+    
+    // Tratamento específico de erros do Prisma
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0];
+      const fieldNames: Record<string, string> = {
+        cpf: 'CPF',
+        crefito: 'CREFITO',
+        email: 'Email',
+      };
+      const fieldName = fieldNames[field] || 'Campo';
+      return NextResponse.json({
+        error: `${fieldName} já cadastrado. Este ${fieldName.toLowerCase()} já está em uso por outro fisioterapeuta.`,
+      }, { status: 400 });
+    }
+
+    if (error.code === 'P2003') {
+      return NextResponse.json({
+        error: 'Erro de referência: uma ou mais equipes selecionadas não existem.',
+      }, { status: 400 });
+    }
+
+    if (error.code === 'P2025') {
+      return NextResponse.json({
+        error: 'Fisioterapeuta não encontrado.',
+      }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      error: 'Erro ao atualizar fisioterapeuta. Verifique os dados e tente novamente.',
+    }, { status: 500 });
   }
 }
 

@@ -60,6 +60,36 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // Verifica se CPF já existe
+    const existingCpf = await prisma.physiotherapist.findUnique({
+      where: { cpf },
+    });
+    if (existingCpf) {
+      return NextResponse.json({
+        error: 'CPF já cadastrado. Este CPF já está em uso por outro fisioterapeuta.',
+      }, { status: 400 });
+    }
+
+    // Verifica se CREFITO já existe
+    const existingCrefito = await prisma.physiotherapist.findUnique({
+      where: { crefito },
+    });
+    if (existingCrefito) {
+      return NextResponse.json({
+        error: 'CREFITO já cadastrado. Este número de registro já está em uso por outro fisioterapeuta.',
+      }, { status: 400 });
+    }
+
+    // Verifica se Email já existe
+    const existingEmail = await prisma.physiotherapist.findUnique({
+      where: { email },
+    });
+    if (existingEmail) {
+      return NextResponse.json({
+        error: 'Email já cadastrado. Este email já está em uso por outro fisioterapeuta.',
+      }, { status: 400 });
+    }
+
     const physiotherapist = await prisma.physiotherapist.create({
       data: {
         name,
@@ -73,27 +103,22 @@ export async function POST(request: Request) {
         startDate: new Date(startDate),
         exitDate: exitDate ? new Date(exitDate) : null,
         contractType,
-        hourValue: hourValue !== undefined && hourValue !== null && `${hourValue}` !== '' ? Number(hourValue) : 0, // Renomeado
+        hourValue: hourValue !== undefined && hourValue !== null && `${hourValue}` !== '' ? Number(hourValue) : 0,
         additionalValue: additionalValue !== undefined && additionalValue !== null && `${additionalValue}` !== '' ? Number(additionalValue) : 0,
         status: status ?? 'ACTIVE',
-        // Novos campos bancários
         banco: banco ?? null,
         agencia: agencia ?? null,
         conta: conta ?? null,
         tipoPix: tipoPix ?? null,
         chavePix: chavePix ?? null,
-        // Novos campos para PJ (obrigatórios apenas se contractType for 'PJ')
         nomeEmpresa: contractType === 'PJ' ? nomeEmpresa : null,
         cnpjEmpresa: contractType === 'PJ' ? cnpjEmpresa : null,
         enderecoEmpresa: contractType === 'PJ' ? enderecoEmpresa : null,
-        // Criar relações com as equipes selecionadas
-        // teamIds pode ser um array simples [1, 2, 3] ou um array de objetos [{teamId: 1, customShiftValue: 100}, ...]
         teams: teamIds && teamIds.length > 0 ? {
           create: teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
             if (typeof team === 'number') {
               return { shiftTeamId: team };
             }
-            // Só incluir customShiftValue se o campo existir no schema
             const teamData: any = { shiftTeamId: team.teamId };
             if (team.customShiftValue !== undefined && team.customShiftValue !== null) {
               try {
@@ -108,8 +133,37 @@ export async function POST(request: Request) {
       },
     });
     return NextResponse.json(physiotherapist, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro na API de fisioterapeutas:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+    
+    // Tratamento específico de erros do Prisma
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0];
+      const fieldNames: Record<string, string> = {
+        cpf: 'CPF',
+        crefito: 'CREFITO',
+        email: 'Email',
+      };
+      const fieldName = fieldNames[field] || 'Campo';
+      return NextResponse.json({
+        error: `${fieldName} já cadastrado. Este ${fieldName.toLowerCase()} já está em uso por outro fisioterapeuta.`,
+      }, { status: 400 });
+    }
+
+    if (error.code === 'P2003') {
+      return NextResponse.json({
+        error: 'Erro de referência: uma ou mais equipes selecionadas não existem.',
+      }, { status: 400 });
+    }
+
+    if (error.code === 'P2025') {
+      return NextResponse.json({
+        error: 'Registro não encontrado.',
+      }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      error: 'Erro ao cadastrar fisioterapeuta. Verifique os dados e tente novamente.',
+    }, { status: 500 });
   }
 }

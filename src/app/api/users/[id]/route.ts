@@ -230,6 +230,17 @@ export async function PUT(
 }
 
 /**
+ * PATCH /api/users/[id]
+ * Atualiza parcialmente um usuário (apenas para administradores)
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  return PUT(request, { params });
+}
+
+/**
  * DELETE /api/users/[id]
  * Remove um usuário (apenas para administradores)
  */

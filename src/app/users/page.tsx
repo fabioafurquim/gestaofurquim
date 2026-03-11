@@ -52,6 +52,8 @@ export default function UsersPage() {
     physiotherapistId: '',
   });
   const [formLoading, setFormLoading] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showEditForm, setShowEditForm] = useState(false);
 
   // Verifica autenticação via NextAuth
   useEffect(() => {
@@ -189,6 +191,55 @@ export default function UsersPage() {
       setUsers(prev => prev.filter(user => user.id !== userId));
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
+    }
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowEditForm(true);
+    setShowCreateForm(false);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    try {
+      setFormLoading(true);
+      setError('');
+      setSuccess('');
+
+      const response = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          physiotherapistId: editingUser.physiotherapistId || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao atualizar usuário');
+      }
+
+      const updatedUser = await response.json();
+      
+      // Recarrega a lista completa de usuários para garantir dados atualizados
+      const usersResponse = await fetch('/api/users');
+      if (usersResponse.ok) {
+        const usersData = await usersResponse.json();
+        setUsers(usersData.users || []);
+      }
+      
+      setSuccess('Usuário atualizado com sucesso!');
+      setShowEditForm(false);
+      setEditingUser(null);
+      
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar usuário');
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -346,6 +397,52 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* Formulário de edição */}
+      {showEditForm && editingUser && (
+        <div className="mb-8 bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Editar Usuário</h2>
+          <form onSubmit={handleUpdateUser} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="physiotherapistId" className="block text-sm font-medium text-gray-700">
+                  Fisioterapeuta
+                </label>
+                <select
+                  id="physiotherapistId"
+                  name="physiotherapistId"
+                  value={editingUser.physiotherapistId || ''}
+                  onChange={(e) => setEditingUser({ ...editingUser, physiotherapistId: e.target.value })}
+                  className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                >
+                  <option value="">Selecione um fisioterapeuta</option>
+                  {physiotherapists.map((physio) => (
+                    <option key={physio.id} value={physio.id}>
+                      {physio.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowEditForm(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={formLoading}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {formLoading ? 'Atualizando...' : 'Atualizar Usuário'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Lista de usuários */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
@@ -392,6 +489,12 @@ export default function UsersPage() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleEditUser(user)}
+                      className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      Editar
+                    </button>
                     <button
                       onClick={() => handleResetPassword(user.id, user.name)}
                       className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

@@ -168,6 +168,9 @@ export default function EditPhysiotherapistPage() {
         nomeEmpresa: physio.contractType === 'PJ' ? (physio as any).nomeEmpresa : null,
         cnpjEmpresa: physio.contractType === 'PJ' ? (physio as any).cnpjEmpresa : null,
         enderecoEmpresa: physio.contractType === 'PJ' ? (physio as any).enderecoEmpresa : null,
+        // Campos Telegram
+        telegramChatId: (physio as any).telegramChatId || null,
+        telegramUsername: (physio as any).telegramUsername || null,
         // Equipes selecionadas com valores customizados
         teamIds: teamIdsWithValues,
       };

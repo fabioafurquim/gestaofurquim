@@ -131,7 +131,7 @@ export default function SettingsPage() {
       const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET;
       
       if (!cronSecret) {
-        setTestError('❌ Erro: NEXT_PUBLIC_CRON_SECRET não configurado no .env.local');
+        setTestError('❌ Erro: NEXT_PUBLIC_CRON_SECRET não configurado no .env');
         setTestingNotifications(false);
         return;
       }
