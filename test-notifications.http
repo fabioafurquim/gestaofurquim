@@ -1,0 +1,45 @@
+### Testar Notificações Diárias (Cron Job)
+# Instale a extensão "REST Client" no VS Code
+# Clique em "Send Request" acima da requisição
+
+GET http://localhost:3000/api/cron/notify-shifts
+Authorization: Bearer {{$dotenv CRON_SECRET}}
+
+###
+
+### Testar Configurações de Notificações
+GET http://localhost:3000/api/notifications/settings
+
+###
+
+### Atualizar Configurações (apenas ADMIN)
+PUT http://localhost:3000/api/notifications/settings
+Content-Type: application/json
+
+{
+  "enabled": true,
+  "dailyReminderEnabled": true,
+  "dailyReminderTime": "18:00",
+  "instantNotificationEnabled": true,
+  "dailyReminderTemplate": "🏥 Lembrete de Plantão\n\nOlá, {{name}}! 👋\n\nVocê está escalado para amanhã:\n\n📅 Data: {{date}}\n⏰ Período: {{period}}\n🏢 Equipe: {{team}}\n\nBoa sorte! 💪",
+  "instantNotificationTemplate": "✅ Novo Plantão Cadastrado\n\nOlá, {{name}}!\n\nVocê foi escalado para:\n\n📅 Data: {{date}}\n⏰ Período: {{period}}\n🏢 Equipe: {{team}}\n\nConfira no sistema!"
+}
+
+###
+
+### Vincular Fisioterapeuta ao Telegram
+POST http://localhost:3000/api/telegram/link
+Content-Type: application/json
+
+{
+  "physiotherapistId": 1,
+  "chatId": "SEU_CHAT_ID_AQUI",
+  "username": "seu_username"
+}
+
+###
+
+### Desvincular Fisioterapeuta
+DELETE http://localhost:3000/api/telegram/link?physiotherapistId=1
+
+###
