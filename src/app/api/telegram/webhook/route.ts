@@ -114,7 +114,14 @@ export async function POST(request: NextRequest) {
     const text = message.text;
     const username = message.from?.username;
 
-    console.log('[Webhook] ChatId:', chatId, '| Text recebido:', JSON.stringify(text), '| Tipo:', typeof text);
+    console.log('[Webhook] ========== MENSAGEM RECEBIDA ==========');
+    console.log('[Webhook] ChatId:', chatId);
+    console.log('[Webhook] Username:', username);
+    console.log('[Webhook] Text:', JSON.stringify(text));
+    console.log('[Webhook] Text Type:', typeof text);
+    console.log('[Webhook] Text Length:', text ? text.length : 0);
+    console.log('[Webhook] Message completa:', JSON.stringify(message, null, 2));
+    console.log('[Webhook] ==========================================');
 
     if (text === '/start') {
       const firstName = message.from?.first_name || 'Usuário';
@@ -201,6 +208,10 @@ Após a vinculação, você receberá notificações automaticamente! ✅
       return NextResponse.json({ ok: true });
     } else if (text === '/teste') {
       await bot.sendMessage(chatId, '✅ Comando /teste funcionando!', { parse_mode: 'HTML' });
+      return NextResponse.json({ ok: true });
+    } else if (text === '/meusplantoes') {
+      console.log('[/meusplantoes] COMANDO RECEBIDO! ChatId:', chatId);
+      await bot.sendMessage(chatId, '✅ Comando /meusplantoes recebido! Funcionando!');
       return NextResponse.json({ ok: true });
     } else if (text === '/plantoes') {
       console.log('[/plantoes] COMANDO RECEBIDO! ChatId:', chatId);
