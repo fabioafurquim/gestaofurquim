@@ -198,163 +198,176 @@ Após a vinculação, você receberá notificações automaticamente! ✅
 
         await bot.sendMessage(chatId, notLinkedMessage, { parse_mode: 'HTML' });
       }
+      return NextResponse.json({ ok: true });
     } else if (text === '/plantoes') {
-      console.log('[/plantoes] Comando recebido de chatId:', chatId);
-      
-      const physio = await prisma.physiotherapist.findFirst({
-        where: { telegramChatId: chatId },
-        select: { id: true, name: true }
-      });
-      
-      console.log('[/plantoes] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
-
-      if (!physio) {
-        await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const futureShifts = await prisma.shift.findMany({
-        where: {
-          physiotherapistId: physio.id,
-          date: { gte: today }
-        },
-        include: {
-          shiftTeam: true
-        },
-        orderBy: { date: 'asc' }
-      });
-
-      if (futureShifts.length === 0) {
-        await bot.sendMessage(chatId, '📅 Você não possui plantões agendados a partir de hoje.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const periodNames: Record<string, string> = {
-        MORNING: '🌅 Manhã',
-        INTERMEDIATE: '☀️ Intermediário',
-        AFTERNOON: '🌤️ Tarde',
-        NIGHT: '🌙 Noite'
-      };
-
-      let message = `📅 <b>Seus Plantões Futuros</b>\n\n`;
-      message += `Total: <b>${futureShifts.length}</b> plantão(ões)\n\n`;
-
-      futureShifts.forEach((shift, index) => {
-        const shiftDate = new Date(shift.date);
-        const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
+      try {
+        console.log('[/plantoes] Comando recebido de chatId:', chatId);
+        
+        const physio = await prisma.physiotherapist.findFirst({
+          where: { telegramChatId: chatId },
+          select: { id: true, name: true }
         });
-        const periodName = periodNames[shift.period] || shift.period;
         
-        message += `${index + 1}. <b>${dateStr}</b>\n`;
-        message += `   ${periodName}\n`;
-        message += `   🏥 ${shift.shiftTeam.name}\n\n`;
-      });
+        console.log('[/plantoes] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
 
-      await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-      return NextResponse.json({ ok: true });
-    } else if (text === '/plantoesrealizados') {
-      console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
-      
-      const physio = await prisma.physiotherapist.findFirst({
-        where: { telegramChatId: chatId },
-        select: { id: true, name: true }
-      });
-      
-      console.log('[/plantoesrealizados] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
-
-      if (!physio) {
-        await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const pastShifts = await prisma.shift.findMany({
-        where: {
-          physiotherapistId: physio.id,
-          date: { lt: today }
-        },
-        select: { date: true },
-        orderBy: { date: 'desc' }
-      });
-
-      if (pastShifts.length === 0) {
-        await bot.sendMessage(chatId, '📋 Você ainda não possui plantões realizados no histórico.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const monthsWithShifts = new Map<string, { month: number; year: number; count: number }>();
-      
-      pastShifts.forEach(shift => {
-        const shiftDate = new Date(shift.date);
-        const month = shiftDate.getMonth();
-        const year = shiftDate.getFullYear();
-        const key = `${year}-${String(month + 1).padStart(2, '0')}`;
-        
-        if (monthsWithShifts.has(key)) {
-          monthsWithShifts.get(key)!.count++;
-        } else {
-          monthsWithShifts.set(key, { month, year, count: 1 });
+        if (!physio) {
+          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
+          return NextResponse.json({ ok: true });
         }
-      });
 
-      const monthNames = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-      let messageText = `📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n`;
-      messageText += `Você possui plantões realizados nos seguintes meses:\n\n`;
-
-      const sortedMonths = Array.from(monthsWithShifts.entries())
-        .sort((a, b) => b[0].localeCompare(a[0]));
-
-      sortedMonths.forEach(([key, data], index) => {
-        const monthName = monthNames[data.month];
-        messageText += `${index + 1}. <b>${monthName}/${data.year}</b> - ${data.count} plantão(ões)\n`;
-      });
-
-      messageText += `\n💡 <b>Clique no botão do mês desejado:</b>`;
-
-      // Criar botões inline (máximo 2 por linha)
-      const buttons = [];
-      for (let i = 0; i < sortedMonths.length; i += 2) {
-        const row = [];
-        
-        const [key1, data1] = sortedMonths[i];
-        const monthName1 = monthNames[data1.month];
-        row.push({
-          text: `${monthName1}/${data1.year}`,
-          callback_data: `month_${data1.year}_${String(data1.month + 1).padStart(2, '0')}`
+        const futureShifts = await prisma.shift.findMany({
+          where: {
+            physiotherapistId: physio.id,
+            date: { gte: today }
+          },
+          include: {
+            shiftTeam: true
+          },
+          orderBy: { date: 'asc' }
         });
 
-        if (i + 1 < sortedMonths.length) {
-          const [key2, data2] = sortedMonths[i + 1];
-          const monthName2 = monthNames[data2.month];
-          row.push({
-            text: `${monthName2}/${data2.year}`,
-            callback_data: `month_${data2.year}_${String(data2.month + 1).padStart(2, '0')}`
+        if (futureShifts.length === 0) {
+          await bot.sendMessage(chatId, '📅 Você não possui plantões agendados a partir de hoje.', { parse_mode: 'HTML' });
+          return NextResponse.json({ ok: true });
+        }
+
+        const periodNames: Record<string, string> = {
+          MORNING: '🌅 Manhã',
+          INTERMEDIATE: '☀️ Intermediário',
+          AFTERNOON: '🌤️ Tarde',
+          NIGHT: '🌙 Noite'
+        };
+
+        let message = `📅 <b>Seus Plantões Futuros</b>\n\n`;
+        message += `Total: <b>${futureShifts.length}</b> plantão(ões)\n\n`;
+
+        futureShifts.forEach((shift, index) => {
+          const shiftDate = new Date(shift.date);
+          const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
           });
-        }
+          const periodName = periodNames[shift.period] || shift.period;
+          
+          message += `${index + 1}. <b>${dateStr}</b>\n`;
+          message += `   ${periodName}\n`;
+          message += `   🏥 ${shift.shiftTeam.name}\n\n`;
+        });
 
-        buttons.push(row);
+        await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+        return NextResponse.json({ ok: true });
+      } catch (error) {
+        console.error('[/plantoes] ERRO:', error);
+        await bot.sendMessage(chatId, '❌ Erro ao processar comando /plantoes. Tente novamente.', { parse_mode: 'HTML' });
+        return NextResponse.json({ ok: true });
       }
+    } else if (text === '/plantoesrealizados') {
+      try {
+        console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
+        
+        const physio = await prisma.physiotherapist.findFirst({
+          where: { telegramChatId: chatId },
+          select: { id: true, name: true }
+        });
+        
+        console.log('[/plantoesrealizados] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
 
-      await bot.sendMessage(chatId, messageText, { 
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: buttons
+        if (!physio) {
+          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
+          return NextResponse.json({ ok: true });
         }
-      });
-      return NextResponse.json({ ok: true });
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const pastShifts = await prisma.shift.findMany({
+          where: {
+            physiotherapistId: physio.id,
+            date: { lt: today }
+          },
+          select: { date: true },
+          orderBy: { date: 'desc' }
+        });
+
+        if (pastShifts.length === 0) {
+          await bot.sendMessage(chatId, '📋 Você ainda não possui plantões realizados no histórico.', { parse_mode: 'HTML' });
+          return NextResponse.json({ ok: true });
+        }
+
+        const monthsWithShifts = new Map<string, { month: number; year: number; count: number }>();
+        
+        pastShifts.forEach(shift => {
+          const shiftDate = new Date(shift.date);
+          const month = shiftDate.getMonth();
+          const year = shiftDate.getFullYear();
+          const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+          
+          if (monthsWithShifts.has(key)) {
+            monthsWithShifts.get(key)!.count++;
+          } else {
+            monthsWithShifts.set(key, { month, year, count: 1 });
+          }
+        });
+
+        const monthNames = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+
+        let messageText = `📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n`;
+        messageText += `Você possui plantões realizados nos seguintes meses:\n\n`;
+
+        const sortedMonths = Array.from(monthsWithShifts.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]));
+
+        sortedMonths.forEach(([key, data], index) => {
+          const monthName = monthNames[data.month];
+          messageText += `${index + 1}. <b>${monthName}/${data.year}</b> - ${data.count} plantão(ões)\n`;
+        });
+
+        messageText += `\n💡 <b>Clique no botão do mês desejado:</b>`;
+
+        // Criar botões inline (máximo 2 por linha)
+        const buttons = [];
+        for (let i = 0; i < sortedMonths.length; i += 2) {
+          const row = [];
+          
+          const [key1, data1] = sortedMonths[i];
+          const monthName1 = monthNames[data1.month];
+          row.push({
+            text: `${monthName1}/${data1.year}`,
+            callback_data: `month_${data1.year}_${String(data1.month + 1).padStart(2, '0')}`
+          });
+
+          if (i + 1 < sortedMonths.length) {
+            const [key2, data2] = sortedMonths[i + 1];
+            const monthName2 = monthNames[data2.month];
+            row.push({
+              text: `${monthName2}/${data2.year}`,
+              callback_data: `month_${data2.year}_${String(data2.month + 1).padStart(2, '0')}`
+            });
+          }
+
+          buttons.push(row);
+        }
+
+        await bot.sendMessage(chatId, messageText, { 
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: buttons
+          }
+        });
+        return NextResponse.json({ ok: true });
+      } catch (error) {
+        console.error('[/plantoesrealizados] ERRO:', error);
+        await bot.sendMessage(chatId, '❌ Erro ao processar comando /plantoesrealizados. Tente novamente.', { parse_mode: 'HTML' });
+        return NextResponse.json({ ok: true });
+      }
     } else if (text === '/help') {
       const helpMessage = `
 📋 <b>Comandos Disponíveis:</b>
