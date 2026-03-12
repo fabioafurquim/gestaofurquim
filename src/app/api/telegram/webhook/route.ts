@@ -199,73 +199,13 @@ Após a vinculação, você receberá notificações automaticamente! ✅
         await bot.sendMessage(chatId, notLinkedMessage, { parse_mode: 'HTML' });
       }
       return NextResponse.json({ ok: true });
+    } else if (text === '/teste') {
+      await bot.sendMessage(chatId, '✅ Comando /teste funcionando!', { parse_mode: 'HTML' });
+      return NextResponse.json({ ok: true });
     } else if (text === '/plantoes') {
-      try {
-        console.log('[/plantoes] Comando recebido de chatId:', chatId);
-        
-        const physio = await prisma.physiotherapist.findFirst({
-          where: { telegramChatId: chatId },
-          select: { id: true, name: true }
-        });
-        
-        console.log('[/plantoes] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
-
-        if (!physio) {
-          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
-          return NextResponse.json({ ok: true });
-        }
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const futureShifts = await prisma.shift.findMany({
-          where: {
-            physiotherapistId: physio.id,
-            date: { gte: today }
-          },
-          include: {
-            shiftTeam: true
-          },
-          orderBy: { date: 'asc' }
-        });
-
-        if (futureShifts.length === 0) {
-          await bot.sendMessage(chatId, '📅 Você não possui plantões agendados a partir de hoje.', { parse_mode: 'HTML' });
-          return NextResponse.json({ ok: true });
-        }
-
-        const periodNames: Record<string, string> = {
-          MORNING: '🌅 Manhã',
-          INTERMEDIATE: '☀️ Intermediário',
-          AFTERNOON: '🌤️ Tarde',
-          NIGHT: '🌙 Noite'
-        };
-
-        let message = `📅 <b>Seus Plantões Futuros</b>\n\n`;
-        message += `Total: <b>${futureShifts.length}</b> plantão(ões)\n\n`;
-
-        futureShifts.forEach((shift, index) => {
-          const shiftDate = new Date(shift.date);
-          const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          });
-          const periodName = periodNames[shift.period] || shift.period;
-          
-          message += `${index + 1}. <b>${dateStr}</b>\n`;
-          message += `   ${periodName}\n`;
-          message += `   🏥 ${shift.shiftTeam.name}\n\n`;
-        });
-
-        await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      } catch (error) {
-        console.error('[/plantoes] ERRO:', error);
-        await bot.sendMessage(chatId, '❌ Erro ao processar comando /plantoes. Tente novamente.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
+      console.log('[/plantoes] COMANDO RECEBIDO! ChatId:', chatId);
+      await bot.sendMessage(chatId, '✅ Comando /plantoes recebido! Funcionando!');
+      return NextResponse.json({ ok: true });
     } else if (text === '/plantoesrealizados') {
       try {
         console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
