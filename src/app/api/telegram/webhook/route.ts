@@ -1,6 +1,189 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type TelegramBot from 'node-telegram-bot-api';
 import { prisma } from '@/lib/prisma';
 import { getTelegramBot } from '@/lib/telegram';
+
+const TELEGRAM_MESSAGE_LIMIT = 3800;
+
+const PERIOD_NAMES: Record<string, string> = {
+  MORNING: '🌅 Manhã',
+  INTERMEDIATE: '☀️ Intermediário',
+  AFTERNOON: '🌤️ Tarde',
+  NIGHT: '🌙 Noite'
+};
+
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+function escapeTelegramHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getCommand(text?: string): string | null {
+  if (!text) {
+    return null;
+  }
+
+  const firstToken = text.trim().split(/\s+/)[0];
+  if (!firstToken.startsWith('/')) {
+    return null;
+  }
+
+  return firstToken.toLowerCase().replace(/@[\w_]+$/, '');
+}
+
+function splitTelegramMessage(message: string, maxLength = TELEGRAM_MESSAGE_LIMIT): string[] {
+  if (message.length <= maxLength) {
+    return [message];
+  }
+
+  const chunks: string[] = [];
+  const sections = message.split('\n\n');
+  let currentChunk = '';
+
+  for (const section of sections) {
+    const candidate = currentChunk ? `${currentChunk}\n\n${section}` : section;
+    if (candidate.length <= maxLength) {
+      currentChunk = candidate;
+      continue;
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+      currentChunk = '';
+    }
+
+    if (section.length <= maxLength) {
+      currentChunk = section;
+      continue;
+    }
+
+    const lines = section.split('\n');
+    let currentLineChunk = '';
+
+    for (const line of lines) {
+      const lineCandidate = currentLineChunk ? `${currentLineChunk}\n${line}` : line;
+      if (lineCandidate.length <= maxLength) {
+        currentLineChunk = lineCandidate;
+        continue;
+      }
+
+      if (currentLineChunk) {
+        chunks.push(currentLineChunk);
+      }
+
+      currentLineChunk = line;
+    }
+
+    if (currentLineChunk) {
+      currentChunk = currentLineChunk;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+async function sendHtmlMessage(
+  bot: TelegramBot,
+  chatId: string,
+  message: string
+): Promise<void> {
+  for (const chunk of splitTelegramMessage(message)) {
+    await bot.sendMessage(chatId, chunk, { parse_mode: 'HTML' });
+  }
+}
+
+async function findPhysioByChatId(chatId: string) {
+  return prisma.physiotherapist.findFirst({
+    where: { telegramChatId: chatId },
+    select: { id: true, name: true }
+  });
+}
+
+async function findFutureShifts(physiotherapistId: number, fromDate: Date) {
+  return prisma.shift.findMany({
+    where: {
+      physiotherapistId,
+      date: { gte: fromDate }
+    },
+    include: { shiftTeam: true },
+    orderBy: { date: 'asc' }
+  });
+}
+
+async function findPastShiftDates(physiotherapistId: number, beforeDate: Date) {
+  return prisma.shift.findMany({
+    where: {
+      physiotherapistId,
+      date: { lt: beforeDate }
+    },
+    select: { date: true },
+    orderBy: { date: 'desc' }
+  });
+}
+
+async function findMonthShifts(physiotherapistId: number, startDate: Date, endDate: Date) {
+  return prisma.shift.findMany({
+    where: {
+      physiotherapistId,
+      date: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    include: { shiftTeam: true },
+    orderBy: { date: 'asc' }
+  });
+}
+
+function buildShiftDetailsMessage(
+  title: string,
+  shifts: Array<{ date: Date; period: string; shiftTeam: { name: string } }>
+): string {
+  let message = `📅 <b>${escapeTelegramHtml(title)}</b>\n\n`;
+  message += `Total: <b>${shifts.length}</b> plantão(ões)\n\n`;
+
+  shifts.forEach((shift, index) => {
+    const shiftDate = new Date(shift.date);
+    const dateStr = shiftDate.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const periodName = PERIOD_NAMES[shift.period] || shift.period;
+
+    message += `${index + 1}. <b>${escapeTelegramHtml(dateStr)}</b>\n`;
+    message += `   ${escapeTelegramHtml(periodName)}\n`;
+    message += `   🏥 ${escapeTelegramHtml(shift.shiftTeam.name)}\n\n`;
+  });
+
+  return message.trim();
+}
+
+function buildMonthSelectionMessage(
+  months: Array<{ month: number; year: number; count: number }>
+): string {
+  let message = '📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n';
+  message += 'Você possui plantões realizados nos seguintes meses:\n\n';
+
+  months.forEach((monthData, index) => {
+    message += `${index + 1}. <b>${MONTH_NAMES[monthData.month]}/${monthData.year}</b> - ${monthData.count} plantão(ões)\n`;
+  });
+
+  message += '\n💡 <b>Clique no botão do mês desejado:</b>';
+  return message;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,79 +208,42 @@ export async function POST(request: NextRequest) {
       const callbackQuery = body.callback_query;
       const chatId = callbackQuery.message.chat.id.toString();
       const data = callbackQuery.data;
-      const messageId = callbackQuery.message.message_id;
 
       // Responder ao callback para remover o loading
       await bot.answerCallbackQuery(callbackQuery.id);
 
       // Processar clique no botão de mês
-      if (data.startsWith('month_')) {
+      if (typeof data === 'string' && data.startsWith('month_')) {
         const [_, year, month] = data.split('_');
         const monthNum = parseInt(month) - 1;
         const yearNum = parseInt(year);
 
-        const physio = await prisma.physiotherapist.findFirst({
-          where: { telegramChatId: chatId },
-          select: { id: true, name: true }
-        });
+        const physio = await findPhysioByChatId(chatId);
 
         if (!physio) {
-          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema.');
+          await sendHtmlMessage(bot, chatId, '⚠️ Você precisa estar vinculado ao sistema.');
           return NextResponse.json({ ok: true });
         }
 
         const startDate = new Date(yearNum, monthNum, 1);
         const endDate = new Date(yearNum, monthNum + 1, 0, 23, 59, 59);
+        const monthShifts = await findMonthShifts(physio.id, startDate, endDate);
 
-        const monthShifts = await prisma.shift.findMany({
-          where: {
-            physiotherapistId: physio.id,
-            date: {
-              gte: startDate,
-              lte: endDate
-            }
-          },
-          include: {
-            shiftTeam: true
-          },
-          orderBy: { date: 'asc' }
-        });
+        if (monthShifts.length === 0) {
+          await sendHtmlMessage(
+            bot,
+            chatId,
+            `📋 Nenhum plantão encontrado em ${MONTH_NAMES[monthNum]}/${yearNum}.`
+          );
+          return NextResponse.json({ ok: true });
+        }
 
-        const periodNames: Record<string, string> = {
-          MORNING: '🌅 Manhã',
-          INTERMEDIATE: '☀️ Intermediário',
-          AFTERNOON: '🌤️ Tarde',
-          NIGHT: '🌙 Noite'
-        };
+        const monthMessage = buildShiftDetailsMessage(
+          `Plantões Realizados - ${MONTH_NAMES[monthNum]}/${yearNum}`,
+          monthShifts
+        );
 
-        const monthNames = [
-          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-        ];
-
-        let message = `📋 <b>Plantões Realizados - ${monthNames[monthNum]}/${yearNum}</b>\n\n`;
-        message += `Total: <b>${monthShifts.length}</b> plantão(ões)\n\n`;
-
-        monthShifts.forEach((shift, index) => {
-          const shiftDate = new Date(shift.date);
-          const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
-            weekday: 'long', 
-            day: '2-digit', 
-            month: '2-digit'
-          });
-          const periodName = periodNames[shift.period] || shift.period;
-          
-          message += `${index + 1}. <b>${dateStr}</b>\n`;
-          message += `   ${periodName}\n`;
-          message += `   🏥 ${shift.shiftTeam.name}\n\n`;
-        });
-
-        // Editar a mensagem original com os resultados
-        await bot.editMessageText(message, {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'HTML'
-        });
+        await sendHtmlMessage(bot, chatId, monthMessage);
       }
 
       return NextResponse.json({ ok: true });
@@ -110,6 +256,7 @@ export async function POST(request: NextRequest) {
 
     const chatId = message.chat.id.toString();
     const text = message.text;
+    const command = getCommand(text);
     const username = message.from?.username;
 
     console.log('[Webhook] ========== MENSAGEM RECEBIDA ==========');
@@ -121,7 +268,7 @@ export async function POST(request: NextRequest) {
     console.log('[Webhook] Message completa:', JSON.stringify(message, null, 2));
     console.log('[Webhook] ==========================================');
 
-    if (text === '/start') {
+    if (command === '/start') {
       const firstName = message.from?.first_name || 'Usuário';
       
       const welcomeMessage = `
@@ -150,7 +297,7 @@ Para receber notificações de plantões, você precisa vincular sua conta.
       `.trim();
 
       await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
-    } else if (text === '/status') {
+    } else if (command === '/status') {
       const firstName = message.from?.first_name || 'Usuário';
       
       const physio = await prisma.physiotherapist.findFirst({
@@ -204,93 +351,56 @@ Após a vinculação, você receberá notificações automaticamente! ✅
         await bot.sendMessage(chatId, notLinkedMessage, { parse_mode: 'HTML' });
       }
       return NextResponse.json({ ok: true });
-    } else if (text === '/teste') {
+    } else if (command === '/teste') {
       await bot.sendMessage(chatId, '✅ Comando /teste funcionando!', { parse_mode: 'HTML' });
       return NextResponse.json({ ok: true });
-    } else if (text === '/shifts' || text === '/plantoes') {
+    } else if (command === '/shifts' || command === '/plantoes') {
       console.log('[/shifts] COMANDO RECEBIDO! ChatId:', chatId);
       
-      const physio = await prisma.physiotherapist.findFirst({
-        where: { telegramChatId: chatId },
-        select: { id: true, name: true }
-      });
+      const physio = await findPhysioByChatId(chatId);
 
       if (!physio) {
-        await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema. Use /start', { parse_mode: 'HTML' });
+        await sendHtmlMessage(bot, chatId, '⚠️ Você precisa estar vinculado ao sistema. Use /start');
         return NextResponse.json({ ok: true });
       }
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const futureShifts = await prisma.shift.findMany({
-        where: {
-          physiotherapistId: physio.id,
-          date: { gte: today }
-        },
-        include: { shiftTeam: true },
-        orderBy: { date: 'asc' }
-      });
+      const futureShifts = await findFutureShifts(physio.id, today);
 
       if (futureShifts.length === 0) {
-        await bot.sendMessage(chatId, '📅 Você não possui plantões agendados.', { parse_mode: 'HTML' });
+        await sendHtmlMessage(bot, chatId, '📅 Você não possui plantões agendados.');
         return NextResponse.json({ ok: true });
       }
 
-      const periodNames: Record<string, string> = {
-        MORNING: '🌅 Manhã',
-        INTERMEDIATE: '☀️ Intermediário',
-        AFTERNOON: '🌤️ Tarde',
-        NIGHT: '🌙 Noite'
-      };
-
-      let message = `📅 <b>Seus Plantões Futuros</b>\n\nTotal: <b>${futureShifts.length}</b> plantão(ões)\n\n`;
-
-      futureShifts.forEach((shift, index) => {
-        const shiftDate = new Date(shift.date);
-        const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        });
-        const periodName = periodNames[shift.period] || shift.period;
-        
-        message += `${index + 1}. <b>${dateStr}</b>\n   ${periodName}\n   🏥 ${shift.shiftTeam.name}\n\n`;
-      });
-
-      await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+      const futureMessage = buildShiftDetailsMessage('Seus Plantões Futuros', futureShifts);
+      await sendHtmlMessage(bot, chatId, futureMessage);
       return NextResponse.json({ ok: true });
-    } else if (text === '/history' || text === '/plantoesrealizados') {
+    } else if (command === '/history' || command === '/plantoesrealizados') {
       try {
         console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
         
-        const physio = await prisma.physiotherapist.findFirst({
-          where: { telegramChatId: chatId },
-          select: { id: true, name: true }
-        });
+        const physio = await findPhysioByChatId(chatId);
         
         console.log('[/plantoesrealizados] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
 
         if (!physio) {
-          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
+          await sendHtmlMessage(
+            bot,
+            chatId,
+            '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.'
+          );
           return NextResponse.json({ ok: true });
         }
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const pastShifts = await prisma.shift.findMany({
-          where: {
-            physiotherapistId: physio.id,
-            date: { lt: today }
-          },
-          select: { date: true },
-          orderBy: { date: 'desc' }
-        });
+        const pastShifts = await findPastShiftDates(physio.id, today);
 
         if (pastShifts.length === 0) {
-          await bot.sendMessage(chatId, '📋 Você ainda não possui plantões realizados no histórico.', { parse_mode: 'HTML' });
+          await sendHtmlMessage(bot, chatId, '📋 Você ainda não possui plantões realizados no histórico.');
           return NextResponse.json({ ok: true });
         }
 
@@ -309,39 +419,25 @@ Após a vinculação, você receberá notificações automaticamente! ✅
           }
         });
 
-        const monthNames = [
-          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-        ];
-
-        let messageText = `📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n`;
-        messageText += `Você possui plantões realizados nos seguintes meses:\n\n`;
-
         const sortedMonths = Array.from(monthsWithShifts.entries())
-          .sort((a, b) => b[0].localeCompare(a[0]));
-
-        sortedMonths.forEach(([key, data], index) => {
-          const monthName = monthNames[data.month];
-          messageText += `${index + 1}. <b>${monthName}/${data.year}</b> - ${data.count} plantão(ões)\n`;
-        });
-
-        messageText += `\n💡 <b>Clique no botão do mês desejado:</b>`;
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([, data]) => data);
 
         // Criar botões inline (máximo 2 por linha)
         const buttons = [];
         for (let i = 0; i < sortedMonths.length; i += 2) {
           const row = [];
           
-          const [key1, data1] = sortedMonths[i];
-          const monthName1 = monthNames[data1.month];
+          const data1 = sortedMonths[i];
+          const monthName1 = MONTH_NAMES[data1.month];
           row.push({
             text: `${monthName1}/${data1.year}`,
             callback_data: `month_${data1.year}_${String(data1.month + 1).padStart(2, '0')}`
           });
 
           if (i + 1 < sortedMonths.length) {
-            const [key2, data2] = sortedMonths[i + 1];
-            const monthName2 = monthNames[data2.month];
+            const data2 = sortedMonths[i + 1];
+            const monthName2 = MONTH_NAMES[data2.month];
             row.push({
               text: `${monthName2}/${data2.year}`,
               callback_data: `month_${data2.year}_${String(data2.month + 1).padStart(2, '0')}`
@@ -350,6 +446,8 @@ Após a vinculação, você receberá notificações automaticamente! ✅
 
           buttons.push(row);
         }
+
+        const messageText = buildMonthSelectionMessage(sortedMonths);
 
         await bot.sendMessage(chatId, messageText, { 
           parse_mode: 'HTML',
@@ -360,10 +458,10 @@ Após a vinculação, você receberá notificações automaticamente! ✅
         return NextResponse.json({ ok: true });
       } catch (error) {
         console.error('[/plantoesrealizados] ERRO:', error);
-        await bot.sendMessage(chatId, '❌ Erro ao processar comando /plantoesrealizados. Tente novamente.', { parse_mode: 'HTML' });
+        await sendHtmlMessage(bot, chatId, '❌ Erro ao processar comando /plantoesrealizados. Tente novamente.');
         return NextResponse.json({ ok: true });
       }
-    } else if (text === '/help') {
+    } else if (command === '/help') {
       const helpMessage = `
 📋 <b>Comandos Disponíveis:</b>
 
