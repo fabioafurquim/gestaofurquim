@@ -11,6 +11,89 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Bot não configurado' }, { status: 500 });
     }
 
+    // Handler para callback_query (cliques nos botões)
+    if (body.callback_query) {
+      const callbackQuery = body.callback_query;
+      const chatId = callbackQuery.message.chat.id.toString();
+      const data = callbackQuery.data;
+      const messageId = callbackQuery.message.message_id;
+
+      // Responder ao callback para remover o loading
+      await bot.answerCallbackQuery(callbackQuery.id);
+
+      // Processar clique no botão de mês
+      if (data.startsWith('month_')) {
+        const [_, year, month] = data.split('_');
+        const monthNum = parseInt(month) - 1;
+        const yearNum = parseInt(year);
+
+        const physio = await prisma.physiotherapist.findFirst({
+          where: { telegramChatId: chatId },
+          select: { id: true, name: true }
+        });
+
+        if (!physio) {
+          await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema.');
+          return NextResponse.json({ ok: true });
+        }
+
+        const startDate = new Date(yearNum, monthNum, 1);
+        const endDate = new Date(yearNum, monthNum + 1, 0, 23, 59, 59);
+
+        const monthShifts = await prisma.shift.findMany({
+          where: {
+            physiotherapistId: physio.id,
+            date: {
+              gte: startDate,
+              lte: endDate
+            }
+          },
+          include: {
+            shiftTeam: true
+          },
+          orderBy: { date: 'asc' }
+        });
+
+        const periodNames: Record<string, string> = {
+          MORNING: '🌅 Manhã',
+          INTERMEDIATE: '☀️ Intermediário',
+          AFTERNOON: '🌤️ Tarde',
+          NIGHT: '🌙 Noite'
+        };
+
+        const monthNames = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+
+        let message = `📋 <b>Plantões Realizados - ${monthNames[monthNum]}/${yearNum}</b>\n\n`;
+        message += `Total: <b>${monthShifts.length}</b> plantão(ões)\n\n`;
+
+        monthShifts.forEach((shift, index) => {
+          const shiftDate = new Date(shift.date);
+          const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
+            weekday: 'long', 
+            day: '2-digit', 
+            month: '2-digit'
+          });
+          const periodName = periodNames[shift.period] || shift.period;
+          
+          message += `${index + 1}. <b>${dateStr}</b>\n`;
+          message += `   ${periodName}\n`;
+          message += `   🏥 ${shift.shiftTeam.name}\n\n`;
+        });
+
+        // Editar a mensagem original com os resultados
+        await bot.editMessageText(message, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'HTML'
+        });
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
     const message = body.message;
     if (!message) {
       return NextResponse.json({ ok: true });
@@ -206,105 +289,49 @@ Após a vinculação, você receberá notificações automaticamente! ✅
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
       ];
 
-      let message = `📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n`;
-      message += `Você possui plantões realizados nos seguintes meses:\n\n`;
+      let messageText = `📋 <b>Plantões Realizados - Selecione o Mês</b>\n\n`;
+      messageText += `Você possui plantões realizados nos seguintes meses:\n\n`;
 
       const sortedMonths = Array.from(monthsWithShifts.entries())
         .sort((a, b) => b[0].localeCompare(a[0]));
 
       sortedMonths.forEach(([key, data], index) => {
         const monthName = monthNames[data.month];
-        message += `${index + 1}. <b>${monthName}/${data.year}</b> - ${data.count} plantão(ões)\n`;
+        messageText += `${index + 1}. <b>${monthName}/${data.year}</b> - ${data.count} plantão(ões)\n`;
       });
 
-      message += `\n💡 <b>Para ver os detalhes:</b>\n`;
-      message += `Digite: <code>/mes MM/AAAA</code>\n`;
-      message += `Exemplo: <code>/mes 03/2026</code>`;
+      messageText += `\n💡 <b>Clique no botão do mês desejado:</b>`;
 
-      await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-    } else if (text?.startsWith('/mes ')) {
-      const physio = await prisma.physiotherapist.findFirst({
-        where: { telegramChatId: chatId },
-        select: { id: true, name: true }
-      });
-
-      if (!physio) {
-        await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const monthYearStr = text.replace('/mes ', '').trim();
-      const match = monthYearStr.match(/^(\d{2})\/(\d{4})$/);
-
-      if (!match) {
-        await bot.sendMessage(chatId, '❌ Formato inválido. Use: <code>/mes MM/AAAA</code>\nExemplo: <code>/mes 03/2026</code>', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const month = parseInt(match[1]) - 1;
-      const year = parseInt(match[2]);
-
-      if (month < 0 || month > 11) {
-        await bot.sendMessage(chatId, '❌ Mês inválido. Use um valor entre 01 e 12.', { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const startDate = new Date(year, month, 1);
-      const endDate = new Date(year, month + 1, 0, 23, 59, 59);
-
-      const monthShifts = await prisma.shift.findMany({
-        where: {
-          physiotherapistId: physio.id,
-          date: {
-            gte: startDate,
-            lte: endDate
-          }
-        },
-        include: {
-          shiftTeam: true
-        },
-        orderBy: { date: 'asc' }
-      });
-
-      if (monthShifts.length === 0) {
-        const monthNames = [
-          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-        ];
-        await bot.sendMessage(chatId, `📋 Nenhum plantão encontrado em ${monthNames[month]}/${year}.`, { parse_mode: 'HTML' });
-        return NextResponse.json({ ok: true });
-      }
-
-      const periodNames: Record<string, string> = {
-        MORNING: '🌅 Manhã',
-        INTERMEDIATE: '☀️ Intermediário',
-        AFTERNOON: '🌤️ Tarde',
-        NIGHT: '🌙 Noite'
-      };
-
-      const monthNames = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
-
-      let message = `📋 <b>Plantões Realizados - ${monthNames[month]}/${year}</b>\n\n`;
-      message += `Total: <b>${monthShifts.length}</b> plantão(ões)\n\n`;
-
-      monthShifts.forEach((shift, index) => {
-        const shiftDate = new Date(shift.date);
-        const dateStr = shiftDate.toLocaleDateString('pt-BR', { 
-          weekday: 'long', 
-          day: '2-digit', 
-          month: '2-digit'
-        });
-        const periodName = periodNames[shift.period] || shift.period;
+      // Criar botões inline (máximo 2 por linha)
+      const buttons = [];
+      for (let i = 0; i < sortedMonths.length; i += 2) {
+        const row = [];
         
-        message += `${index + 1}. <b>${dateStr}</b>\n`;
-        message += `   ${periodName}\n`;
-        message += `   🏥 ${shift.shiftTeam.name}\n\n`;
-      });
+        const [key1, data1] = sortedMonths[i];
+        const monthName1 = monthNames[data1.month];
+        row.push({
+          text: `${monthName1}/${data1.year}`,
+          callback_data: `month_${data1.year}_${String(data1.month + 1).padStart(2, '0')}`
+        });
 
-      await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+        if (i + 1 < sortedMonths.length) {
+          const [key2, data2] = sortedMonths[i + 1];
+          const monthName2 = monthNames[data2.month];
+          row.push({
+            text: `${monthName2}/${data2.year}`,
+            callback_data: `month_${data2.year}_${String(data2.month + 1).padStart(2, '0')}`
+          });
+        }
+
+        buttons.push(row);
+      }
+
+      await bot.sendMessage(chatId, messageText, { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: buttons
+        }
+      });
     } else if (text === '/help') {
       const helpMessage = `
 📋 <b>Comandos Disponíveis:</b>
