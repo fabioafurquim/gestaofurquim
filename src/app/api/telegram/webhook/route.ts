@@ -207,6 +207,10 @@ Após a vinculação, você receberá notificações automaticamente! ✅
     } else if (text === '/teste') {
       await bot.sendMessage(chatId, '✅ Comando /teste funcionando!', { parse_mode: 'HTML' });
       return NextResponse.json({ ok: true });
+    } else if (text === '/p') {
+      console.log('[/p] COMANDO RECEBIDO! ChatId:', chatId);
+      await bot.sendMessage(chatId, '✅ Comando /p funcionando! Este é o comando de plantões.');
+      return NextResponse.json({ ok: true });
     } else if (text === '/meusplantoes') {
       console.log('[/meusplantoes] COMANDO RECEBIDO! ChatId:', chatId);
       await bot.sendMessage(chatId, '✅ Comando /meusplantoes recebido! Funcionando!');
