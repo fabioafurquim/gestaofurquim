@@ -5,9 +5,12 @@ import { getTelegramBot } from '@/lib/telegram';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[Telegram Webhook] Recebido:', JSON.stringify(body, null, 2));
+    
     const bot = getTelegramBot();
 
     if (!bot) {
+      console.error('[Telegram Webhook] Bot não configurado');
       return NextResponse.json({ error: 'Bot não configurado' }, { status: 500 });
     }
 
@@ -186,10 +189,14 @@ Após a vinculação, você receberá notificações automaticamente! ✅
         await bot.sendMessage(chatId, notLinkedMessage, { parse_mode: 'HTML' });
       }
     } else if (text === '/plantoes') {
+      console.log('[/plantoes] Comando recebido de chatId:', chatId);
+      
       const physio = await prisma.physiotherapist.findFirst({
         where: { telegramChatId: chatId },
         select: { id: true, name: true }
       });
+      
+      console.log('[/plantoes] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
 
       if (!physio) {
         await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
@@ -242,10 +249,14 @@ Após a vinculação, você receberá notificações automaticamente! ✅
 
       await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
     } else if (text === '/plantoesrealizados') {
+      console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
+      
       const physio = await prisma.physiotherapist.findFirst({
         where: { telegramChatId: chatId },
         select: { id: true, name: true }
       });
+      
+      console.log('[/plantoesrealizados] Fisioterapeuta encontrado:', physio ? physio.name : 'Nenhum');
 
       if (!physio) {
         await bot.sendMessage(chatId, '⚠️ Você precisa estar vinculado ao sistema para usar este comando. Use /start para instruções.', { parse_mode: 'HTML' });
@@ -356,7 +367,8 @@ Entre em contato com a gestão do sistema.
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error('Erro no webhook do Telegram:', error);
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+    console.error('[Telegram Webhook] Erro:', error);
+    console.error('[Telegram Webhook] Stack:', error instanceof Error ? error.stack : 'N/A');
+    return NextResponse.json({ error: 'Erro interno', details: error instanceof Error ? error.message : 'Unknown' }, { status: 500 });
   }
 }
