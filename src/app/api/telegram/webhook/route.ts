@@ -114,6 +114,8 @@ export async function POST(request: NextRequest) {
     const text = message.text;
     const username = message.from?.username;
 
+    console.log('[Webhook] ChatId:', chatId, '| Text recebido:', JSON.stringify(text), '| Tipo:', typeof text);
+
     if (text === '/start') {
       const firstName = message.from?.first_name || 'Usuário';
       
