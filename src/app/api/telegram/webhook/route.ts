@@ -9,10 +9,8 @@ export async function POST(request: NextRequest) {
       body = await request.json();
       console.log('[Telegram Webhook] Recebido:', JSON.stringify(body, null, 2));
     } catch (parseError) {
-      const text = await request.text();
       console.error('[Telegram Webhook] Erro ao parsear JSON:', parseError);
-      console.error('[Telegram Webhook] Body bruto:', text);
-      return NextResponse.json({ error: 'Invalid JSON', details: text.substring(0, 200) }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
     
     const bot = getTelegramBot();
