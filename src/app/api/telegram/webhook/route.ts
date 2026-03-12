@@ -21,40 +21,86 @@ export async function POST(request: NextRequest) {
     const username = message.from?.username;
 
     if (text === '/start') {
+      const firstName = message.from?.first_name || 'Usuário';
+      
       const welcomeMessage = `
-🤖 <b>Bem-vindo ao Sistema de Notificações de Plantões!</b>
+🤖 <b>Bem-vindo ao Sistema de Plantões Furquim!</b>
 
-Para receber notificações automáticas sobre seus plantões, você precisa vincular sua conta.
+Olá, ${firstName}! 👋
 
-<b>Como vincular:</b>
-1. Acesse o sistema web
-2. Vá em seu perfil
-3. Clique em "Vincular Telegram"
-4. Seu código de vinculação será exibido
+Para receber notificações de plantões, você precisa vincular sua conta.
 
-Ou peça ao administrador para vincular sua conta usando seu @username: <code>${username || 'não definido'}</code>
+📋 <b>Seu Chat ID:</b> <code>${chatId}</code>
 
-Seu Chat ID: <code>${chatId}</code>
+📝 <b>Como vincular:</b>
+1. <b>Copie</b> o Chat ID acima (toque para copiar)
+2. <b>Envie</b> para a Gestora da Furquim Fisioterapia:
+   👤 <b>Franciele</b>
+   📱 <b>Telefone:</b> 41-99814-9864
+3. <b>Aguarde</b> a vinculação ser feita pela gestora
+
+✅ Após a vinculação, você receberá:
+• ⚡ Notificação imediata ao ser escalado
+• 📅 Lembrete 1 dia antes do plantão
+
+💡 <b>Comandos disponíveis:</b>
+• /status - Verificar se está vinculado
+• /help - Ver todos os comandos
       `.trim();
 
       await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
     } else if (text === '/status') {
+      const firstName = message.from?.first_name || 'Usuário';
+      
       const physio = await prisma.physiotherapist.findFirst({
         where: { telegramChatId: chatId },
+        select: {
+          id: true,
+          name: true,
+          telegramUsername: true,
+        }
       });
 
       if (physio) {
-        await bot.sendMessage(
-          chatId,
-          `✅ Sua conta está vinculada!\n\nNome: ${physio.name}\nVocê receberá notificações sobre seus plantões.`,
-          { parse_mode: 'HTML' }
-        );
+        const statusMessage = `
+✅ <b>Vinculação Confirmada!</b>
+
+Olá, ${firstName}! 👋
+
+Seu Telegram está vinculado ao sistema:
+👤 <b>Nome:</b> ${physio.name}
+💬 <b>Chat ID:</b> <code>${chatId}</code>
+${physio.telegramUsername ? `📱 <b>Username:</b> @${physio.telegramUsername}` : ''}
+
+🔔 <b>Você receberá notificações:</b>
+• ⚡ Imediatas ao ser escalado
+• 📅 Lembretes 1 dia antes do plantão
+
+Tudo certo! 🎉
+        `.trim();
+
+        await bot.sendMessage(chatId, statusMessage, { parse_mode: 'HTML' });
       } else {
-        await bot.sendMessage(
-          chatId,
-          '❌ Sua conta ainda não está vinculada.\n\nUse /start para ver instruções.',
-          { parse_mode: 'HTML' }
-        );
+        const notLinkedMessage = `
+⚠️ <b>Telegram Não Vinculado</b>
+
+Olá, ${firstName}! 👋
+
+Seu Telegram ainda não está vinculado ao sistema.
+
+📋 <b>Seu Chat ID:</b> <code>${chatId}</code>
+
+📝 <b>Para vincular:</b>
+1. <b>Copie</b> o Chat ID acima
+2. <b>Envie</b> para a Gestora da Furquim Fisioterapia:
+   👤 <b>Franciele</b>
+   📱 <b>Telefone:</b> 41-99814-9864
+3. <b>Aguarde</b> a vinculação ser feita
+
+Após a vinculação, você receberá notificações automaticamente! ✅
+        `.trim();
+
+        await bot.sendMessage(chatId, notLinkedMessage, { parse_mode: 'HTML' });
       }
     } else if (text === '/help') {
       const helpMessage = `
