@@ -1,0 +1,249 @@
+/* ========================================
+   CORREÇÕES DE RESPONSIVIDADE MOBILE
+   ======================================== */
+
+/* Garantir que formulários caibam na tela mobile */
+@media (max-width: 768px) {
+  /* Containers de formulário */
+  .form-container,
+  form {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Inputs e selects */
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important; /* Previne zoom no iOS */
+    max-width: 100%;
+  }
+
+  /* Grids de formulário - empilhar em mobile */
+  .grid.grid-cols-2,
+  .grid.grid-cols-3,
+  .grid.grid-cols-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Botões de ação - largura total em mobile */
+  .action-buttons,
+  .form-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .action-buttons > button,
+  .form-actions > button {
+    width: 100% !important;
+  }
+
+  /* Modais e dialogs */
+  [role="dialog"],
+  .dialog-content {
+    max-width: calc(100vw - 2rem) !important;
+    margin: 1rem;
+  }
+
+  /* Tabelas - scroll horizontal */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 600px;
+  }
+
+  /* Cards */
+  .card,
+  .bg-white.rounded-lg {
+    margin-left: 0;
+    margin-right: 0;
+    border-radius: 0.5rem;
+  }
+
+  /* Padding reduzido em mobile */
+  .px-6 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .py-6 {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+  }
+
+  /* Textos menores em mobile */
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+
+  /* Checkboxes e radio buttons - área de toque maior */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+  }
+
+  /* Labels de checkbox - melhor espaçamento */
+  label:has(input[type="checkbox"]),
+  label:has(input[type="radio"]) {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    cursor: pointer;
+  }
+
+  /* Select múltiplo - melhor visualização */
+  .team-selection,
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* Evitar quebra de layout com conteúdo longo */
+  * {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  /* Botões flutuantes - posição fixa */
+  .fixed.bottom-6.right-6 {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+
+  /* Melhorar área de toque em botões pequenos */
+  button,
+  a.button {
+    min-height: 44px; /* Tamanho mínimo recomendado para touch */
+  }
+
+  /* Footer de modais - empilhar botões */
+  .dialog-footer,
+  [class*="DialogFooter"] {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .dialog-footer > button,
+  [class*="DialogFooter"] > button {
+    width: 100% !important;
+  }
+
+  /* Campos de valor monetário - melhor visualização */
+  input[inputmode="decimal"],
+  input[type="text"][placeholder*="R$"] {
+    font-size: 1.125rem;
+    font-weight: 500;
+  }
+
+  /* Seções colapsáveis */
+  details summary {
+    cursor: pointer;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Melhorar visualização de erros */
+  .error-message,
+  .text-red-600,
+  .text-red-500 {
+    font-size: 0.875rem;
+    padding: 0.5rem;
+    background: #fef2f2;
+    border-radius: 0.375rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Melhorar visualização de sucesso */
+  .success-message,
+  .text-green-600,
+  .text-green-500 {
+    font-size: 0.875rem;
+    padding: 0.5rem;
+    background: #f0fdf4;
+    border-radius: 0.375rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Navegação de abas - scroll horizontal se necessário */
+  .tabs-navigation {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabs-navigation::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Garantir que imagens não quebrem layout */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Melhorar espaçamento entre campos de formulário */
+  .space-y-4 > * + * {
+    margin-top: 1rem !important;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 1.5rem !important;
+  }
+
+  /* Prevenir zoom em inputs no iOS Safari */
+  @supports (-webkit-touch-callout: none) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Correções específicas para telas muito pequenas (< 375px) */
+@media (max-width: 375px) {
+  .px-4 {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  h1 {
+    font-size: 1.25rem !important;
+  }
+
+  button {
+    font-size: 0.875rem !important;
+  }
+}
+
+/* Landscape mobile - ajustes */
+@media (max-width: 768px) and (orientation: landscape) {
+  .fixed.bottom-6 {
+    bottom: 1rem;
+  }
+
+  [role="dialog"] {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}

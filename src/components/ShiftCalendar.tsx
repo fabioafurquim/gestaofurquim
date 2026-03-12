@@ -1131,11 +1131,15 @@ export default function ShiftCalendar() {
               Adicionar Plantão
             </DialogTitle>
             <p className="text-sm text-gray-500">
-              {selectedDate && new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR', { 
-                weekday: 'long', 
-                day: 'numeric', 
-                month: 'long' 
-              })}
+              {selectedDate && (() => {
+                const [year, month, day] = selectedDate.split('-').map(Number);
+                const date = new Date(year, month - 1, day);
+                return date.toLocaleDateString('pt-BR', { 
+                  weekday: 'long', 
+                  day: 'numeric', 
+                  month: 'long' 
+                });
+              })()}
             </p>
           </DialogHeader>
           
@@ -1183,17 +1187,17 @@ export default function ShiftCalendar() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
             <Button 
               variant="outline" 
               onClick={handleCloseModal}
-              className="h-12 text-base flex-1 sm:flex-none"
+              className="h-12 text-base w-full sm:w-auto"
             >
               Cancelar
             </Button>
             <Button 
               onClick={handleSaveShift}
-              className="h-12 text-base flex-1 sm:flex-none"
+              className="h-12 text-base w-full sm:w-auto"
             >
               Salvar Plantão
             </Button>
