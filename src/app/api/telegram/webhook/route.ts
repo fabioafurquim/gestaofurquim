@@ -131,13 +131,19 @@ async function findPastShiftDates(physiotherapistId: number, beforeDate: Date) {
   });
 }
 
-async function findMonthShifts(physiotherapistId: number, startDate: Date, endDate: Date) {
+async function findMonthShifts(
+  physiotherapistId: number,
+  startDate: Date,
+  endDate: Date,
+  beforeDate: Date
+) {
   return prisma.shift.findMany({
     where: {
       physiotherapistId,
       date: {
         gte: startDate,
-        lte: endDate
+        lte: endDate,
+        lt: beforeDate
       }
     },
     include: { shiftTeam: true },
@@ -227,7 +233,10 @@ export async function POST(request: NextRequest) {
 
         const startDate = new Date(yearNum, monthNum, 1);
         const endDate = new Date(yearNum, monthNum + 1, 0, 23, 59, 59);
-        const monthShifts = await findMonthShifts(physio.id, startDate, endDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const monthShifts = await findMonthShifts(physio.id, startDate, endDate, today);
 
         if (monthShifts.length === 0) {
           await sendHtmlMessage(

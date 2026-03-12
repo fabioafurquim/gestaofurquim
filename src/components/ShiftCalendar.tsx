@@ -1129,7 +1129,7 @@ export default function ShiftCalendar() {
 
       {/* Modal Adicionar Plantão */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] p-4 sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg">
               Adicionar Plantão
@@ -1211,7 +1211,7 @@ export default function ShiftCalendar() {
 
       {/* Modal Editar Plantão */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] p-4 sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg">
               Editar Plantão
@@ -1280,7 +1280,7 @@ export default function ShiftCalendar() {
             <div className="flex flex-col sm:flex-row gap-2 w-full">
               <Button 
                 onClick={handleUpdateShift}
-                className="h-11 text-sm w-full sm:flex-1"
+                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
               >
                 ✓ Salvar Alterações
               </Button>
@@ -1291,23 +1291,23 @@ export default function ShiftCalendar() {
                     window.location.href = `/swap-board?shiftId=${selectedEvent.id}`;
                   }
                 }}
-                className="h-11 text-sm w-full sm:flex-1"
+                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
               >
                 🔄 Solicitar Troca
               </Button>
             </div>
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
               <Button 
                 variant="outline" 
                 onClick={handleCloseEditModal}
-                className="h-11 text-sm flex-1 sm:flex-none"
+                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1 sm:w-auto sm:flex-none"
               >
                 Cancelar
               </Button>
               <Button 
                 variant="destructive" 
                 onClick={handleDeleteShift}
-                className="h-11 text-sm flex-1 sm:flex-none"
+                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1 sm:w-auto sm:flex-none"
               >
                 🗑️ Excluir
               </Button>

@@ -45,10 +45,15 @@
   }
 
   /* Modais e dialogs */
+  [data-slot="dialog-content"],
   [role="dialog"],
   .dialog-content {
-    max-width: calc(100vw - 2rem) !important;
-    margin: 1rem;
+    width: calc(100vw - 1rem) !important;
+    max-width: calc(100vw - 1rem) !important;
+    max-height: calc(100vh - 1rem) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
   }
 
   /* Tabelas - scroll horizontal */
@@ -136,14 +141,21 @@
 
   /* Footer de modais - empilhar botões */
   .dialog-footer,
+  [data-slot="dialog-footer"],
   [class*="DialogFooter"] {
     flex-direction: column !important;
     gap: 0.5rem !important;
+    align-items: stretch !important;
   }
 
   .dialog-footer > button,
-  [class*="DialogFooter"] > button {
+  .dialog-footer button,
+  [data-slot="dialog-footer"] > button,
+  [data-slot="dialog-footer"] button,
+  [class*="DialogFooter"] > button,
+  [class*="DialogFooter"] button {
     width: 100% !important;
+    white-space: normal !important;
   }
 
   /* Campos de valor monetário - melhor visualização */
@@ -242,6 +254,7 @@
     bottom: 1rem;
   }
 
+  [data-slot="dialog-content"],
   [role="dialog"] {
     max-height: 90vh;
     overflow-y: auto;
