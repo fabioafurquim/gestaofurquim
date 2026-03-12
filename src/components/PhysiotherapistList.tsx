@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiEdit, FiUserX, FiUserCheck } from 'react-icons/fi';
+import { FiEdit, FiUserX, FiUserCheck, FiUser } from 'react-icons/fi';
 import { Physiotherapist, ShiftTeam } from '@prisma/client';
 
 interface PhysioWithTeam extends Physiotherapist {
@@ -113,6 +113,15 @@ export default function PhysiotherapistList() {
     return date.toISOString().slice(0, 10);
   };
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   if (loading) return <p>Carregando...</p>;
   if (error) return <div className="alert alert-danger">{error}</div>;
 
@@ -148,59 +157,128 @@ export default function PhysiotherapistList() {
         </div>
       </div>
 
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>CREFITO</th>
-            <th>Tipo Contrato</th>
-            <th>Status</th>
-            <th>Saída</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody>
+      {/* Desktop: Tabela */}
+      {!isMobile && (
+        <div className="table-container">
+          <table className="table table-striped">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>CREFITO</th>
+                <th>Tipo Contrato</th>
+                <th>Status</th>
+                <th>Saída</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPhysios.map((physio) => (
+                <tr key={physio.id}>
+                  <td>{physio.name}</td>
+                  <td>{physio.crefito}</td>
+                  <td>{translateContractType(physio.contractType as any)}</td>
+                  <td>
+                    <span className={`badge ${physio.status === 'ACTIVE' ? 'bg-success' : 'bg-secondary'}`}>
+                      {physio.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td>{formatDate((physio as any).exitDate)}</td>
+                  <td>
+                    <button
+                      className="btn btn-sm btn-light me-2"
+                      onClick={() => router.push(`/physiotherapists/edit/${physio.id}`)}
+                      title="Editar"
+                    >
+                      <FiEdit />
+                    </button>
+                    {physio.status === 'ACTIVE' ? (
+                      <button
+                        className="btn btn-sm btn-outline-danger"
+                        onClick={() => handleDeactivate(physio)}
+                        title="Desligar"
+                      >
+                        <FiUserX />
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-sm btn-outline-success"
+                        onClick={() => handleReactivate(physio)}
+                        title="Reativar"
+                      >
+                        <FiUserCheck />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Mobile: Cards */}
+      {isMobile && (
+        <div className="space-y-3">
           {filteredPhysios.map((physio) => (
-            <tr key={physio.id}>
-              <td>{physio.name}</td>
-              <td>{physio.crefito}</td>
-              <td>{translateContractType(physio.contractType as any)}</td>
-              <td>
-                <span className={`badge ${physio.status === 'ACTIVE' ? 'bg-success' : 'bg-secondary'}`}>
+            <div key={physio.id} className="bg-white rounded-lg border shadow-sm p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <FiUser className="w-6 h-6 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 text-base truncate">{physio.name}</h3>
+                  <p className="text-sm text-gray-500">CREFITO: {physio.crefito}</p>
+                </div>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
+                  physio.status === 'ACTIVE' 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-gray-100 text-gray-700'
+                }`}>
                   {physio.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
                 </span>
-              </td>
-              <td>{formatDate((physio as any).exitDate)}</td>
-              <td>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
+                <div>
+                  <p className="text-gray-500 text-xs">Contrato</p>
+                  <p className="font-medium text-gray-900">{translateContractType(physio.contractType as any)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Data Saída</p>
+                  <p className="font-medium text-gray-900">{formatDate((physio as any).exitDate)}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
                 <button
-                  className="btn btn-sm btn-light me-2"
                   onClick={() => router.push(`/physiotherapists/edit/${physio.id}`)}
-                  title="Editar"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors"
                 >
-                  <FiEdit />
+                  <FiEdit className="w-4 h-4" />
+                  Editar
                 </button>
                 {physio.status === 'ACTIVE' ? (
                   <button
-                    className="btn btn-sm btn-outline-danger"
                     onClick={() => handleDeactivate(physio)}
-                    title="Desligar"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium hover:bg-red-100 active:bg-red-200 transition-colors"
                   >
-                    <FiUserX />
+                    <FiUserX className="w-4 h-4" />
+                    Desligar
                   </button>
                 ) : (
                   <button
-                    className="btn btn-sm btn-outline-success"
                     onClick={() => handleReactivate(physio)}
-                    title="Reativar"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-50 text-green-700 border border-green-200 rounded-lg font-medium hover:bg-green-100 active:bg-green-200 transition-colors"
                   >
-                    <FiUserCheck />
+                    <FiUserCheck className="w-4 h-4" />
+                    Reativar
                   </button>
                 )}
-              </td>
-            </tr>
+              </div>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      )}
     </div>
   );
 }

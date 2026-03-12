@@ -533,11 +533,15 @@ export default function ShiftCalendar() {
     // Retornar array ordenado por data
     return Object.keys(grouped)
       .sort()
-      .map(date => ({
-        date,
-        dateObj: new Date(date),
-        shifts: grouped[date],
-      }));
+      .map(date => {
+        // Corrigir timezone: criar Date com ano, mês, dia separados
+        const [year, month, day] = date.split('-').map(Number);
+        return {
+          date,
+          dateObj: new Date(year, month - 1, day),
+          shifts: grouped[date],
+        };
+      });
   }, [events, currentMonth]);
 
   if (loading) {
