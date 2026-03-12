@@ -258,6 +258,7 @@ Após a vinculação, você receberá notificações automaticamente! ✅
       });
 
       await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+      return NextResponse.json({ ok: true });
     } else if (text === '/plantoesrealizados') {
       console.log('[/plantoesrealizados] Comando recebido de chatId:', chatId);
       
@@ -353,6 +354,7 @@ Após a vinculação, você receberá notificações automaticamente! ✅
           inline_keyboard: buttons
         }
       });
+      return NextResponse.json({ ok: true });
     } else if (text === '/help') {
       const helpMessage = `
 📋 <b>Comandos Disponíveis:</b>
