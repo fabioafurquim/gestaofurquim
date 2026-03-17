@@ -110,24 +110,31 @@ trigger: always_on
 - **URL:** https://fisio.furquim.cloud
 - **Aplicações no servidor:** `plantaofisio` e `smartpark`
 - **Banco de Dados:** PostgreSQL compartilhado do Coolify (container Docker)
-- **Credenciais DB:** Configuradas via variável de ambiente no Coolify
+- **Credenciais DB:** configuradas via variável de ambiente no Coolify
   - DATABASE_URL: `postgresql://postgres:eLE1NPit1YQKnVU1o2QTABzxPZ46v9iAHyTlXWNwUxv6CCco1sFi5nOeCVSEHhKp@jk4ss8ssocc4owows0csw4kg:5432/plantaofisio`
-  - Host interno: jk4ss8ssocc4owows0csw4kg
-  - Port: 5432
-  - Database: plantaofisio
-  - User: postgres
-- **Deploy:** Automático via Coolify ao fazer push para GitHub
-- **Container Docker:** Gerenciado pelo Coolify
-- **Estratégia real de deploy no Coolify:** Nixpacks
+  - Host interno: `jk4ss8ssocc4owows0csw4kg`
+  - Port: `5432`
+  - Database: `plantaofisio`
+  - User: `postgres`
+- **Deploy:** automático via Coolify ao fazer push para GitHub
+- **Container Docker:** gerenciado pelo Coolify
+- **Estratégia real de deploy no Coolify:** `Nixpacks`
 - **Build verificado em produção:** `npm ci` + `npm run build`
 - **Comando de runtime verificado em produção:** `npm run start`
 - **Dockerfile:** `Dockerfile.vps` existe no repositório, mas **não está sendo usado** no deploy atual do Coolify
+- **Bug conhecido do Coolify neste projeto:** após alguns deploys o domínio customizado volta para o padrão `sslip.io`
+- **Script de correção de domínio no servidor:** `/root/fix-domain-after-deploy.sh`
+- **Uso do script quando o domínio voltar incorreto:**
+  ```bash
+  ssh root@187.77.57.122 "/root/fix-domain-after-deploy.sh"
+  ```
+- **Objetivo do script:** regravar o `docker-compose.yaml` da aplicação com `fisio.furquim.cloud`, restaurar labels HTTPS e subir novamente o compose
 
 ## 🚀 Processo de Deploy
 
 ### Quem Faz Deploy
 - **Usuário** é responsável por fazer o deploy
-- **Cascade** pode auxiliar e também pode acessar via SSH se necessário
+- **Codex** pode auxiliar e também pode acessar via SSH se necessário
 
 ### Fluxo de Deploy
 1. Fazer alterações no código local
@@ -141,21 +148,44 @@ trigger: always_on
    ```bash
    git push origin main
    ```
-5. Coolify detecta push e faz deploy automático via **Nixpacks**
-6. Após o deploy, aplicar migrations de produção manualmente se houver mudanças no Prisma:
+5. Coolify detecta o push e faz deploy automático via **Nixpacks**
+6. Se o Coolify voltar o domínio para `sslip.io`, executar no servidor:
    ```bash
-   npx prisma migrate deploy
+   ssh root@187.77.57.122 "/root/fix-domain-after-deploy.sh"
    ```
-7. Aguardar build e deploy (alguns minutos)
-8. Verificar em https://fisio.furquim.cloud
+7. Se houver mudanças no Prisma, aplicar migrations de produção manualmente
+8. Aguardar build e deploy
+9. Verificar em https://fisio.furquim.cloud
+
+### Migrations em Produção
+- **Nunca** confiar que o deploy do Coolify executou `prisma migrate deploy` automaticamente
+- **Sempre** executar a migration manualmente via SSH no container atual da aplicação
+- Para evitar erros de escape no PowerShell, primeiro descobrir o nome do container atual da app:
+  ```bash
+  ssh root@187.77.57.122 "docker ps --format '{{.Names}}' | grep g48wk8goo88g8k8cw4cs484g | head -n 1"
+  ```
+- Depois executar a migration dentro do container retornado:
+  ```bash
+  ssh root@187.77.57.122 "docker exec NOME_DO_CONTAINER sh -lc 'cd /app && npx prisma migrate deploy'"
+  ```
+- Exemplo real que funcionou:
+  ```bash
+  ssh root@187.77.57.122 "docker exec g48wk8goo88g8k8cw4cs484g-131038304011 sh -lc 'cd /app && npx prisma migrate deploy'"
+  ```
+- Para confirmar no PostgreSQL compartilhado do Coolify se a migration entrou:
+  ```bash
+  ssh root@187.77.57.122 "docker exec jk4ss8ssocc4owows0csw4kg psql -U postgres -d plantaofisio -Atqc 'SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST LIMIT 10;'"
+  ```
+- **Nunca** usar `prisma migrate reset` em produção
+- **Nunca** rodar comandos destrutivos no banco de produção sem avisar o usuário antes
 
 ### Comandos Importantes
 - **Dev local:** `npm run dev`
 - **Build:** `npm run build`
 - **Prisma Studio:** `npx prisma studio`
-- **Migrations:** `npx prisma migrate dev`
+- **Migrations local:** `npx prisma migrate dev`
 - **Migrations em produção:** `npx prisma migrate deploy`
-- **Reset DB (cuidado!):** `npx prisma migrate reset`
+- **Reset DB (cuidado extremo):** `npx prisma migrate reset`
 
 ## 📁 Estrutura do Projeto
 
@@ -206,6 +236,9 @@ trigger: always_on
 
 ### Nunca Fazer
 - ❌ Não usar `prisma migrate reset` em produção
+- ❌ Não apagar, truncar, resetar ou recriar o banco de produção sem avisar explicitamente o usuário antes
+- ❌ Não executar `drop schema`, `drop table`, `truncate`, seeds destrutivos ou limpezas em massa em produção sem confirmação prévia
+- ❌ Não assumir que os dados de produção podem ser recriados depois; há piloto em andamento com fisioterapeutas e plantões reais
 - ❌ Não commitar arquivos `.env` ou `.env.local`
 - ❌ Não fazer deploy sem testar localmente
 - ❌ Não deletar migrations do Prisma
@@ -215,6 +248,8 @@ trigger: always_on
 ### Sempre Fazer
 - ✅ Testar localmente antes de fazer push
 - ✅ Fazer backup do banco antes de migrations grandes
+- ✅ Em produção, aplicar migrations manualmente no container atual da app e validar em `_prisma_migrations`
+- ✅ Se o domínio quebrar após deploy no Coolify, rodar `/root/fix-domain-after-deploy.sh`
 - ✅ Usar `auth()` do NextAuth em API routes
 - ✅ Validar dados com Zod
 - ✅ Converter tipos corretamente (string → number)
@@ -311,25 +346,49 @@ trigger: always_on
 - TailwindCSS: https://tailwindcss.com/docs
 - FullCalendar: https://fullcalendar.io/docs
 
-
 ## 🤖 Comportamento da IA e Uso de Ferramentas (MCPs)
 
 ### 🐘 PostgreSQL MCP (Banco de Dados Local)
 - **Investigação de Bugs de Dados:** Quando eu relatar um problema como "um plantão não está aparecendo" ou "o usuário não consegue logar", use o MCP do Postgres para consultar ativamente o banco em `localhost` e verificar como os dados estão salvos ANTES de sugerir mudanças no código.
-- **Validação de Estrutura:** Ao criar novas queries ou debugar relações no Prisma, consulte o schema real do banco via MCP para confirmar os tipos de dados (lembrando sempre da regra de conversão de ID String para Number).
+- **Validação de Estrutura:** Ao criar novas queries ou debugar relações no Prisma, consulte o schema real do banco via MCP para confirmar os tipos de dados.
 
 ### 🐙 Git MCP (Controle de Versão)
 - **Contexto de Alterações:** Antes de sugerir grandes refatorações, use o Git para ler o histórico recente de commits e entender o contexto das últimas mudanças.
-- **Auxílio no Deploy:** Ao preparar para o push que vai para o Coolify, use o Git MCP para analisar o `diff` das alterações locais e me sugerir uma mensagem de commit precisa, lógica e **SEMPRE em português**.
+- **Auxílio no Deploy:** Ao preparar para o push que vai para o Coolify, use o Git para analisar o `diff` das alterações locais e sugerir uma mensagem de commit precisa, lógica e **sempre em português**.
 
 ### 🧠 Memory MCP (Memória)
-- **Registro Proativo:** Sempre que tomarmos uma nova decisão arquitetural importante, atualizarmos os tipos de permissão (Roles) ou resolvermos um bug complexo do NextAuth, use a ferramenta de Memória para registrar a solução permanentemente.
-- **Contexto de Negócio:** Mantenha as regras de negócio de "Plantões", "Equipes" e "Pagamentos" atualizadas na memória para garantir a continuidade perfeita do projeto entre as sessões.
+- **Registro Proativo:** Sempre que tomarmos uma nova decisão arquitetural importante, atualizarmos os tipos de permissão (Roles) ou resolvermos um bug complexo do NextAuth, registrar a solução permanentemente.
+- **Contexto de Negócio:** Manter as regras de negócio de Plantões, Equipes e Pagamentos atualizadas para garantir continuidade entre sessões.
 
 ### 🧩 Sequential Think MCP (Raciocínio Sequencial)
-- **Planejamento Obrigatório:** Para implementações de alta complexidade (ex: cálculo de folha de pagamento, lógica de feriados, grandes refatorações de UI com Tailwind), acione OBRIGATORIAMENTE o raciocínio sequencial para criar um plano passo a passo estruturado ANTES de começar a escrever o código.
-- **Debug Estruturado:** Ao debugar falhas complexas de estado no React ou erros 401 na API, use o pensamento sequencial para isolar a causa raiz de forma lógica e metódica.
+- **Planejamento Obrigatório:** Para implementações de alta complexidade (ex: cálculo de folha de pagamento, lógica de feriados, grandes refatorações de UI com Tailwind), criar um plano passo a passo estruturado antes de escrever código.
+- **Debug Estruturado:** Ao debugar falhas complexas de estado no React ou erros 401 na API, usar pensamento sequencial para isolar a causa raiz de forma lógica e metódica.
 
-**Última atualização:** 05/03/2026
-**Versão:** 1.0
+**Última atualização:** 17/03/2026
+**Versão:** 1.1
 **Mantido por:** Fábio Furquim
+
+## Skills
+A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.
+### Available skills
+- openai-docs: Use when the user asks how to build with OpenAI products or APIs and needs up-to-date official documentation with citations, help choosing the latest model for a use case, or explicit GPT-5.4 upgrade and prompt-upgrade guidance; prioritize OpenAI docs MCP tools, use bundled references only as helper context, and restrict any fallback browsing to official OpenAI domains. (file: C:/Users/fabiof/.codex/skills/.system/openai-docs/SKILL.md)
+- skill-creator: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Codex's capabilities with specialized knowledge, workflows, or tool integrations. (file: C:/Users/fabiof/.codex/skills/.system/skill-creator/SKILL.md)
+- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: C:/Users/fabiof/.codex/skills/.system/skill-installer/SKILL.md)
+### How to use skills
+- Discovery: The list above is the skills available in this session (name + description + file path). Skill bodies live on disk at the listed paths.
+- Trigger rules: If the user names a skill (with `$SkillName` or plain text) OR the task clearly matches a skill's description shown above, you must use that skill for that turn. Multiple mentions mean use them all. Do not carry skills across turns unless re-mentioned.
+- Missing/blocked: If a named skill isn't in the list or the path can't be read, say so briefly and continue with the best fallback.
+- How to use a skill (progressive disclosure):
+  1) After deciding to use a skill, open its `SKILL.md`. Read only enough to follow the workflow.
+  2) When `SKILL.md` references relative paths (e.g., `scripts/foo.py`), resolve them relative to the skill directory listed above first, and only consider other paths if needed.
+  3) If `SKILL.md` points to extra folders such as `references/`, load only the specific files needed for the request; don't bulk-load everything.
+  4) If `scripts/` exist, prefer running or patching them instead of retyping large code blocks.
+  5) If `assets/` or templates exist, reuse them instead of recreating from scratch.
+- Coordination and sequencing:
+  - If multiple skills apply, choose the minimal set that covers the request and state the order you'll use them.
+  - Announce which skill(s) you're using and why (one short line). If you skip an obvious skill, say why.
+- Context hygiene:
+  - Keep context small: summarize long sections instead of pasting them; only load extra files when needed.
+  - Avoid deep reference-chasing: prefer opening only files directly linked from `SKILL.md` unless you're blocked.
+  - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
+- Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.
