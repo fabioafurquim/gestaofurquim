@@ -245,6 +245,27 @@ model UserAccessLog {
   @@index([userEmail, loggedInAt])
 }
 
+model BackupLog {
+  id              Int      @id @default(autoincrement())
+  triggerType     String   // 'manual_download', 'manual_drive', 'cron_drive'
+  status          String   // 'success', 'failed'
+  fileName        String?
+  fileSize        Int?
+  storageTarget   String?  // 'local_download', 'google_drive'
+  driveFileId     String?
+  driveFileName   String?
+  driveWebViewLink String?
+  errorMessage    String?
+  createdByUserId Int?
+  createdByName   String?
+  createdByEmail  String?
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([triggerType, createdAt])
+  @@index([status, createdAt])
+}
+
 enum ContractStatus {
   ACTIVE
   INACTIVE
