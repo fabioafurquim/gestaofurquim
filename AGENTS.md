@@ -121,6 +121,8 @@ trigger: always_on
 - **Estratégia real de deploy no Coolify:** `Nixpacks`
 - **Build verificado em produção:** `npm ci` + `npm run build`
 - **Comando de runtime verificado em produção:** `npm run start`
+- **Arquivo de configuração do Nixpacks no projeto:** `nixpacks.toml`
+- **Pacote extra necessário no runtime:** `postgresql-client` para permitir `pg_dump` no backup manual e no cron
 - **Dockerfile:** `Dockerfile.vps` existe no repositório, mas **não está sendo usado** no deploy atual do Coolify
 - **Bug conhecido do Coolify neste projeto:** após alguns deploys o domínio customizado volta para o padrão `sslip.io`
 - **Script de correção de domínio no servidor:** `/root/fix-domain-after-deploy.sh`
@@ -187,6 +189,41 @@ trigger: always_on
 - **Migrations em produção:** `npx prisma migrate deploy`
 - **Reset DB (cuidado extremo):** `npx prisma migrate reset`
 
+### Backup em Produção
+- **Estratégia oficial de backup:** dump real do PostgreSQL com `pg_dump`, não JSON parcial
+- **Rota manual para baixar backup:** `POST /api/maintenance/create-dump`
+- **Rota manual para enviar ao Google Drive:** `POST /api/maintenance/upload-backup`
+- **Rota de cron para backup automático no Drive:** `GET /api/cron/database-backup`
+- **Proteção da rota de cron:** header `Authorization: Bearer ${CRON_SECRET}`
+- **Estrutura de pastas no Google Drive para backups:** `Backups Plantaofisio / ANO / ANO-MES`
+- **Formato do arquivo gerado:** `.dump` (`pg_dump --format=custom`)
+- **Nunca** tratar o backup JSON antigo como estratégia principal de recuperação
+
+### Google Drive em Produção
+- **Nunca** commitar `google-credentials.json` ou `google-token.json`
+- **Preferir** configurar credenciais e token no Coolify via variáveis de ambiente
+- Variáveis aceitas para credenciais:
+  - `GOOGLE_CREDENTIALS_JSON`
+  - `GOOGLE_CREDENTIALS_JSON_BASE64`
+  - ou `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`
+- Variáveis aceitas para token:
+  - `GOOGLE_TOKEN_JSON`
+  - `GOOGLE_TOKEN_JSON_BASE64`
+- Os arquivos locais `google-credentials.json` e `google-token.json` continuam funcionando apenas como fallback para desenvolvimento/local
+- Se optar por autenticar uma vez e persistir no Coolify, copiar o conteúdo final do token OAuth para `GOOGLE_TOKEN_JSON`
+
+### Cron no Coolify para Backup
+- Exemplo de endpoint:
+  ```bash
+  GET https://fisio.furquim.cloud/api/cron/database-backup
+  ```
+- Header obrigatório:
+  ```bash
+  Authorization: Bearer SEU_CRON_SECRET
+  ```
+- Frequência recomendada inicial: 1 vez por dia fora do horário comercial
+- Sempre validar manualmente o primeiro backup no Google Drive depois de configurar o cron
+
 ## 📁 Estrutura do Projeto
 
 ### Diretórios Principais
@@ -240,6 +277,7 @@ trigger: always_on
 - ❌ Não executar `drop schema`, `drop table`, `truncate`, seeds destrutivos ou limpezas em massa em produção sem confirmação prévia
 - ❌ Não assumir que os dados de produção podem ser recriados depois; há piloto em andamento com fisioterapeutas e plantões reais
 - ❌ Não commitar arquivos `.env` ou `.env.local`
+- ❌ Não commitar `google-credentials.json` ou `google-token.json`
 - ❌ Não fazer deploy sem testar localmente
 - ❌ Não deletar migrations do Prisma
 - ❌ Não usar sistema antigo de auth-token (usar NextAuth)
@@ -248,6 +286,7 @@ trigger: always_on
 ### Sempre Fazer
 - ✅ Testar localmente antes de fazer push
 - ✅ Fazer backup do banco antes de migrations grandes
+- ✅ Preferir backup automático diário no Google Drive e backup manual antes de mudanças sensíveis
 - ✅ Em produção, aplicar migrations manualmente no container atual da app e validar em `_prisma_migrations`
 - ✅ Se o domínio quebrar após deploy no Coolify, rodar `/root/fix-domain-after-deploy.sh`
 - ✅ Usar `auth()` do NextAuth em API routes

@@ -26,7 +26,7 @@ const Sidebar = () => {
             : 'text-white hover:bg-white/10 hover:text-white'
         }`}>
           <FiHome className="mr-3" size={20} />
-          <span>Dashboard</span>
+          <span>Painel</span>
         </Link>
         <Link href="/physiotherapists" className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
           pathname === '/physiotherapists'

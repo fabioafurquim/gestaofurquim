@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checkingSetup, setCheckingSetup] = useState(true);
+  const [infoMessage, setInfoMessage] = useState('');
 
   // Verifica se o sistema precisa de configuração
   useEffect(() => {
@@ -38,6 +39,13 @@ export default function LoginPage() {
 
     checkSetup();
   }, [router]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'expired') {
+      setInfoMessage('Sua sessão expirou por inatividade. Faça login novamente para continuar.');
+    }
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -111,6 +119,12 @@ export default function LoginPage() {
         </div>
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {infoMessage && (
+            <div className="rounded-md bg-blue-50 p-4">
+              <p className="text-sm text-blue-800">{infoMessage}</p>
+            </div>
+          )}
+
           {error && (
             <div className="rounded-md bg-red-50 p-4">
               <div className="flex">

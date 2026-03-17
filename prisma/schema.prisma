@@ -132,6 +132,7 @@ model User {
   swapApprovals                   ShiftSwapRequest[]                   @relation("SwapApprover")
   teamPriceChanges                ShiftTeamPriceHistory[]              @relation("PriceChangeUser")
   physiotherapistTeamPriceChanges PhysiotherapistTeamPriceHistory[]    @relation("CustomPriceChangeUser")
+  accessLogs                      UserAccessLog[]
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
@@ -225,6 +226,23 @@ model ShiftDeletionLog {
   @@index([deletedByUserId, createdAt])
   @@index([physiotherapistId, createdAt])
   @@index([shiftTeamId, createdAt])
+}
+
+model UserAccessLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  userEmail    String
+  userName     String
+  userRole     UserRole
+  ipAddress    String?
+  userAgent    String?
+  loggedInAt   DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([loggedInAt])
+  @@index([userId, loggedInAt])
+  @@index([userEmail, loggedInAt])
 }
 
 enum ContractStatus {

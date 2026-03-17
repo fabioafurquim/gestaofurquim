@@ -1,6 +1,18 @@
 import type { NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { authenticateUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
+function extractIpAddress(request: Request) {
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0]?.trim() || null;
+  }
+
+  return realIp?.trim() || null;
+}
 
 export const authConfig = {
   pages: {
@@ -56,7 +68,7 @@ export const authConfig = {
   },
   providers: [
     Credentials({
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const { email, password } = credentials as { email: string; password: string };
         
         const user = await authenticateUser(email, password);
@@ -64,6 +76,19 @@ export const authConfig = {
         if (!user) {
           return null;
         }
+
+        await prisma.userAccessLog.create({
+          data: {
+            userId: user.id,
+            userEmail: user.email,
+            userName: user.name,
+            userRole: user.role,
+            ipAddress: extractIpAddress(request),
+            userAgent: request.headers.get('user-agent'),
+          },
+        }).catch((error) => {
+          console.error('Erro ao registrar log de acesso:', error);
+        });
         
         return {
           id: user.id.toString(),

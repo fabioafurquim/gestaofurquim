@@ -27,7 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, Users, TrendingUp, Clock } from 'lucide-react';
+import { Calendar, Users, TrendingUp, Clock, FileDown, Loader2 } from 'lucide-react';
 // Removido import getCurrentUser - agora usamos API route
 
 const periodColor: Record<ShiftPeriod, string> = {
@@ -63,6 +63,7 @@ export default function ShiftCalendar() {
   const [viewAllTeams, setViewAllTeams] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showMobileCalendar, setShowMobileCalendar] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const currentUser = session?.user;
   const isCurrentUserPhysiotherapist = currentUser?.role === 'USER' && !!currentUser.physiotherapistId;
@@ -249,6 +250,49 @@ export default function ShiftCalendar() {
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setSelectedEvent(null);
+  };
+
+  const handleExportMonthlyPdf = async () => {
+    if (!viewingTeamId || viewAllTeams) {
+      toast.warning('Selecione uma equipe específica para exportar a escala.');
+      return;
+    }
+
+    const monthParam = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    try {
+      setExportingPdf(true);
+
+      const response = await fetch(
+        `/api/shifts/export-monthly?teamId=${viewingTeamId}&month=${monthParam}`
+      );
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => null);
+        throw new Error(json?.error || 'Não foi possível exportar a escala em PDF.');
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const fileName = response.headers
+        .get('Content-Disposition')
+        ?.match(/filename="(.+)"/)?.[1] || `escala-${monthParam}.pdf`;
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+
+      toast.success('Escala mensal exportada em PDF.');
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Falha ao exportar a escala mensal.');
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const handleDateClick = (arg: any) => {
@@ -1026,6 +1070,37 @@ export default function ShiftCalendar() {
       {/* Calendário Desktop */}
       {!isMobileView && (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="border-b bg-gray-50/80 px-4 py-3 md:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-gray-900 capitalize">
+                  Calendário mensal
+                </p>
+                <p className="text-xs text-gray-500 capitalize">
+                  {currentMonthName}
+                </p>
+              </div>
+
+              {viewingTeamId && !viewAllTeams && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportMonthlyPdf}
+                  disabled={exportingPdf}
+                  className="h-9 border-gray-200 bg-white text-gray-700 hover:bg-gray-100"
+                >
+                  {exportingPdf ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileDown className="mr-2 h-4 w-4" />
+                  )}
+                  Exportar PDF
+                </Button>
+              )}
+            </div>
+          </div>
+
           <div className="p-4 md:p-6">
             <FullCalendar
             ref={calendarRef}
