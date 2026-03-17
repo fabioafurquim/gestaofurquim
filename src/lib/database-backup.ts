@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import { uploadBufferToDrive } from '@/lib/google-drive';
 
 const BACKUP_MIME_TYPE = 'application/octet-stream';
-const DEFAULT_DRIVE_ROOT = 'Backups Plantaofisio';
+const DEFAULT_DRIVE_ROOT = 'backup_gestaofurquim';
 
 type DatabaseConnectionConfig = {
   host: string;
