@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       prisma.physiotherapist.findMany({
         include: {
           teams: true,
-          user: true
+          users: true
         },
         orderBy: { id: 'asc' }
       }),

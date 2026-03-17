@@ -65,6 +65,13 @@ export default function ShiftCalendar() {
   const [showMobileCalendar, setShowMobileCalendar] = useState(false);
 
   const currentUser = session?.user;
+  const isCurrentUserPhysiotherapist = currentUser?.role === 'USER' && !!currentUser.physiotherapistId;
+
+  const canManageShift = (physioId?: number) => {
+    if (!currentUser) return false;
+    if (currentUser.role !== 'USER') return true;
+    return Number(currentUser.physiotherapistId) === Number(physioId);
+  };
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -118,6 +125,7 @@ export default function ShiftCalendar() {
           title: shift.physiotherapist.name,
           start: dateStr,
           allDay: true,
+          editable: canManageShift(shift.physiotherapistId),
           backgroundColor: periodColor[shift.period as ShiftPeriod],
           borderColor: periodColor[shift.period as ShiftPeriod],
           extendedProps: {
@@ -128,6 +136,7 @@ export default function ShiftCalendar() {
             periodName: periodNames[shift.period as ShiftPeriod],
             periodOrder: periodOrderMap[shift.period as ShiftPeriod],
             physioName: shift.physiotherapist.name,
+            canManage: canManageShift(shift.physiotherapistId),
           },
         };
       });
@@ -164,6 +173,7 @@ export default function ShiftCalendar() {
           title: `${shift.physiotherapist.name} (${shift.shiftTeam.name})`,
           start: dateStr,
           allDay: true,
+          editable: canManageShift(shift.physiotherapistId),
           backgroundColor: periodColor[shift.period as ShiftPeriod],
           borderColor: periodColor[shift.period as ShiftPeriod],
           extendedProps: {
@@ -174,6 +184,7 @@ export default function ShiftCalendar() {
             periodName: periodNames[shift.period as ShiftPeriod],
             periodOrder: periodOrderMap[shift.period as ShiftPeriod],
             physioName: shift.physiotherapist.name,
+            canManage: canManageShift(shift.physiotherapistId),
           },
         };
       });
@@ -193,7 +204,7 @@ export default function ShiftCalendar() {
     } else {
       setEvents([]);
     }
-  }, [viewingTeamId, viewAllTeams, teams]);
+  }, [viewingTeamId, viewAllTeams, teams, currentUser]);
 
   // Detectar tamanho da tela para alternar vista mobile
   useEffect(() => {
@@ -229,6 +240,10 @@ export default function ShiftCalendar() {
     
     return physios;
   }, [viewingTeamId, allPhysiotherapists, teams, currentUser]);
+
+  const canManageSelectedEvent = useMemo(() => {
+    return canManageShift(selectedEvent?.extendedProps?.physioId);
+  }, [selectedEvent, currentUser]);
 
   const handleCloseModal = () => setShowAddModal(false);
   const handleCloseEditModal = () => {
@@ -292,6 +307,10 @@ export default function ShiftCalendar() {
 
   const handleUpdateShift = async () => {
     if (!selectedEvent) return;
+    if (!canManageSelectedEvent) {
+      toast.error('Você só pode alterar os seus próprios plantões.');
+      return;
+    }
     try {
       const response = await fetch(`/api/shifts/${selectedEvent.id}`, {
         method: 'PUT',
@@ -313,6 +332,10 @@ export default function ShiftCalendar() {
   };
 
   const handleDeleteShift = async () => {
+    if (!canManageSelectedEvent) {
+      toast.error('Você só pode excluir os seus próprios plantões.');
+      return;
+    }
     if (!selectedEvent) return;
     if (confirm(`Tem certeza que deseja excluir o plantão de ${selectedEvent.title}?`)) {
       try {
@@ -335,6 +358,11 @@ export default function ShiftCalendar() {
     const { event, revert } = dropInfo;
     const shiftId = event.id;
     const newDate = event.startStr;
+    if (!event.extendedProps?.canManage) {
+      revert();
+      toast.error('Você só pode mover os seus próprios plantões.');
+      return;
+    }
     
     // Salvar a data atual do calendário antes de recarregar
     const currentCalendarDate = calendarRef.current?.getApi().getDate();
@@ -1150,7 +1178,10 @@ export default function ShiftCalendar() {
           <div className="space-y-5 py-4">
             <div className="space-y-2">
               <Label className="text-base font-medium">Período</Label>
-              <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
+              <Select
+                value={selectedPeriod}
+                onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}
+              >
                 <SelectTrigger className="h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
@@ -1234,7 +1265,11 @@ export default function ShiftCalendar() {
           <div className="space-y-5 py-4">
             <div className="space-y-2">
               <Label className="text-base font-medium">Período</Label>
-              <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}>
+              <Select
+                value={selectedPeriod}
+                onValueChange={(value) => setSelectedPeriod(value as ShiftPeriod)}
+                disabled={!canManageSelectedEvent}
+              >
                 <SelectTrigger className="h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
@@ -1280,6 +1315,7 @@ export default function ShiftCalendar() {
             <div className="flex flex-col sm:flex-row gap-2 w-full">
               <Button 
                 onClick={handleUpdateShift}
+                disabled={!canManageSelectedEvent}
                 className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
               >
                 ✓ Salvar Alterações
@@ -1291,6 +1327,7 @@ export default function ShiftCalendar() {
                     window.location.href = `/swap-board?shiftId=${selectedEvent.id}`;
                   }
                 }}
+                disabled={!canManageSelectedEvent}
                 className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
               >
                 🔄 Solicitar Troca
@@ -1307,6 +1344,7 @@ export default function ShiftCalendar() {
               <Button 
                 variant="destructive" 
                 onClick={handleDeleteShift}
+                disabled={!canManageSelectedEvent}
                 className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1 sm:w-auto sm:flex-none"
               >
                 🗑️ Excluir

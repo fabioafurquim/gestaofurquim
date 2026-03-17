@@ -33,6 +33,7 @@ export async function PUT(request: NextRequest) {
       dailyReminderEnabled,
       dailyReminderTime,
       instantNotificationEnabled,
+      shiftDeletionTelegramEnabled,
       dailyReminderTemplate,
       instantNotificationTemplate,
     } = body;
@@ -46,6 +47,7 @@ export async function PUT(request: NextRequest) {
           dailyReminderEnabled,
           dailyReminderTime,
           instantNotificationEnabled,
+          shiftDeletionTelegramEnabled,
           dailyReminderTemplate,
           instantNotificationTemplate,
         },
@@ -58,6 +60,7 @@ export async function PUT(request: NextRequest) {
           dailyReminderEnabled,
           dailyReminderTime,
           instantNotificationEnabled,
+          shiftDeletionTelegramEnabled,
           dailyReminderTemplate,
           instantNotificationTemplate,
         },

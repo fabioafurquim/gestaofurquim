@@ -2,6 +2,7 @@ import { ShiftPeriod } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
+import { notifyManagersAboutShiftDeletion } from '@/lib/shift-deletion';
 
 // PUT (Update) a shift
 export async function PUT(
@@ -35,12 +36,13 @@ export async function PUT(
 
     // Validar se usuário USER só pode editar seus próprios plantões
     if (currentUser.role === 'USER') {
-      if (!currentUser.physiotherapistId || existing.physiotherapistId !== currentUser.physiotherapistId) {
+      const currentPhysiotherapistId = Number(currentUser.physiotherapistId);
+      if (!currentPhysiotherapistId || existing.physiotherapistId !== currentPhysiotherapistId) {
         return NextResponse.json({ error: 'Você só pode editar seus próprios plantões' }, { status: 403 });
       }
       
       // Usuário USER só pode alterar para si mesmo
-      if (Number(physiotherapistId) !== currentUser.physiotherapistId) {
+      if (Number(physiotherapistId) !== currentPhysiotherapistId) {
         return NextResponse.json({ error: 'Você só pode atribuir plantões para si mesmo' }, { status: 403 });
       }
     }
@@ -106,7 +108,23 @@ export async function DELETE(
     // Verificar se o plantão existe e obter informações
     const existingShift = await prisma.shift.findUnique({
       where: { id },
-      select: { id: true, physiotherapistId: true },
+      select: {
+        id: true,
+        date: true,
+        period: true,
+        physiotherapistId: true,
+        shiftTeamId: true,
+        physiotherapist: {
+          select: {
+            name: true,
+          },
+        },
+        shiftTeam: {
+          select: {
+            name: true,
+          },
+        },
+      },
     });
 
     if (!existingShift) {
@@ -115,14 +133,43 @@ export async function DELETE(
 
     // Validar se usuário USER só pode excluir seus próprios plantões
     if (currentUser.role === 'USER') {
-      if (!currentUser.physiotherapistId || existingShift.physiotherapistId !== currentUser.physiotherapistId) {
+      const currentPhysiotherapistId = Number(currentUser.physiotherapistId);
+      if (!currentPhysiotherapistId || existingShift.physiotherapistId !== currentPhysiotherapistId) {
         return NextResponse.json({ error: 'Você só pode excluir seus próprios plantões' }, { status: 403 });
       }
     }
 
-    await prisma.shift.delete({
-      where: { id },
+    const deletionLog = await prisma.$transaction(async (tx) => {
+      const createdLog = await tx.shiftDeletionLog.create({
+        data: {
+          originalShiftId: existingShift.id,
+          shiftDate: existingShift.date,
+          period: existingShift.period,
+          shiftTeamId: existingShift.shiftTeamId,
+          shiftTeamName: existingShift.shiftTeam.name,
+          physiotherapistId: existingShift.physiotherapistId,
+          physiotherapistName: existingShift.physiotherapist.name,
+          deletedByUserId: Number(currentUser.id),
+          deletedByUserName: currentUser.name,
+          deletedByUserRole: currentUser.role,
+          deletedOwnShift:
+            currentUser.role === 'USER' &&
+            Number(currentUser.physiotherapistId) === existingShift.physiotherapistId,
+        },
+      });
+
+      await tx.shift.delete({
+        where: { id },
+      });
+
+      return createdLog;
     });
+
+    if (currentUser.role === 'USER') {
+      notifyManagersAboutShiftDeletion(deletionLog.id).catch((notificationError) => {
+        console.error(`Erro ao notificar exclusÃ£o do plantÃ£o ${id}:`, notificationError);
+      });
+    }
     return NextResponse.json({ message: 'Plantão excluído com sucesso' }, { status: 200 });
   } catch (error) {
     console.error(`Erro ao excluir plantão ${id}:`, error);

@@ -175,6 +175,7 @@ model NotificationSettings {
   dailyReminderEnabled      Boolean  @default(true)
   dailyReminderTime         String   @default("18:00") // Horário do lembrete diário
   instantNotificationEnabled Boolean @default(true)
+  shiftDeletionTelegramEnabled Boolean @default(false) // Alerta gestores/admins quando fisioterapeuta exclui plantÃ£o
   
   // Templates de mensagem personalizáveis
   dailyReminderTemplate     String   @default("🏥 Lembrete de Plantão\n\nOlá, {{name}}! 👋\n\nVocê está escalado para amanhã:\n\n📅 Data: {{date}}\n⏰ Período: {{period}}\n🏢 Equipe: {{team}}\n\nBoa sorte! 💪")
@@ -199,6 +200,31 @@ model NotificationLog {
   
   @@index([physiotherapistId, sentAt])
   @@index([shiftId])
+}
+
+model ShiftDeletionLog {
+  id                  Int         @id @default(autoincrement())
+  originalShiftId     Int
+  shiftDate           DateTime
+  period              ShiftPeriod
+  shiftTeamId         Int
+  shiftTeamName       String
+  physiotherapistId   Int
+  physiotherapistName String
+  deletedByUserId     Int
+  deletedByUserName   String
+  deletedByUserRole   UserRole
+  deletedOwnShift     Boolean     @default(false)
+  notifiedViaTelegram Boolean     @default(false)
+  notificationSentAt  DateTime?
+  notificationError   String?
+  notificationTargets String?
+  createdAt           DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([deletedByUserId, createdAt])
+  @@index([physiotherapistId, createdAt])
+  @@index([shiftTeamId, createdAt])
 }
 
 enum ContractStatus {

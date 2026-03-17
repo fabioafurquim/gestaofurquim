@@ -20,6 +20,7 @@ interface NotificationSettings {
   dailyReminderEnabled: boolean;
   dailyReminderTime: string;
   instantNotificationEnabled: boolean;
+  shiftDeletionTelegramEnabled: boolean;
   dailyReminderTemplate: string;
   instantNotificationTemplate: string;
 }
@@ -513,6 +514,32 @@ export default function SettingsPage() {
             </div>
 
             <div className="px-6 py-4 space-y-6">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-amber-900">
+                      Alerta de exclusão de plantão
+                    </h3>
+                    <p className="mt-1 text-sm text-amber-800">
+                      Quando habilitado, gestores e administradores vinculados a um fisioterapeuta com Telegram configurado recebem aviso sempre que um fisioterapeuta excluir um plantão. O histórico continua sendo salvo mesmo com esta opção desligada.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleToggleNotification('shiftDeletionTelegramEnabled', !notificationSettings.shiftDeletionTelegramEnabled)}
+                    disabled={saving || !notificationSettings.enabled}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      notificationSettings.shiftDeletionTelegramEnabled && notificationSettings.enabled ? 'bg-blue-600' : 'bg-gray-200'
+                    } ${saving || !notificationSettings.enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <span className="sr-only">Alerta de exclusão por Telegram</span>
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        notificationSettings.shiftDeletionTelegramEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
               {/* Toggle: Sistema de Notificações */}
               <div className="flex items-center justify-between pb-4 border-b border-gray-200">
                 <div className="flex-1">

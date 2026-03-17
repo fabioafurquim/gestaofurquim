@@ -41,13 +41,15 @@ export const authConfig = {
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.id as number;
-        session.user.email = token.email as string;
-        session.user.name = token.name as string;
-        session.user.role = token.role as 'ADMIN' | 'MANAGER' | 'USER';
-        session.user.physiotherapistId = token.physiotherapistId as number | null;
-        session.user.isFirstLogin = token.isFirstLogin as boolean;
-        session.user.mustChangePassword = token.mustChangePassword as boolean;
+        const sessionUser = session.user as any;
+
+        sessionUser.id = Number(token.id);
+        sessionUser.email = token.email as string;
+        sessionUser.name = token.name as string;
+        sessionUser.role = token.role as 'ADMIN' | 'MANAGER' | 'USER';
+        sessionUser.physiotherapistId = token.physiotherapistId as number | null;
+        sessionUser.isFirstLogin = token.isFirstLogin as boolean;
+        sessionUser.mustChangePassword = token.mustChangePassword as boolean;
       }
       return session;
     },

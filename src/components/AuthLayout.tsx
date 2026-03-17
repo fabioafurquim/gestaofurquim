@@ -1,20 +1,10 @@
 'use client';
 
-import { useState, useEffect, ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: 'ADMIN' | 'MANAGER' | 'USER';
-  physiotherapistId: string | null;
-  isFirstLogin: boolean;
-  mustChangePassword: boolean;
-}
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -23,7 +13,13 @@ interface AuthLayoutProps {
   fullWidth?: boolean;
 }
 
-export default function AuthLayout({ children, requiredRole, title, fullWidth }: AuthLayoutProps) {
+type NavigationItem = {
+  name: string;
+  href: string;
+  icon: string;
+};
+
+export default function AuthLayout({ children, title, fullWidth }: AuthLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { data: session, status } = useSession({
@@ -33,7 +29,6 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     },
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
@@ -44,7 +39,7 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
           <p className="mt-4 text-gray-600">Carregando...</p>
         </div>
       </div>
@@ -57,27 +52,26 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
 
   const user = session.user;
 
-  // Navegação básica - Dashboard e Plantões para usuários comuns
-  const basicNavigation = [
-    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  const basicNavigation: NavigationItem[] = [
+    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6' },
     { name: 'Plantões', href: '/shifts', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
     { name: 'Mural de Trocas', href: '/swap-board', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4' },
   ];
 
-  // Navegação para gestores - apenas plantões e cadastros básicos
-  const managerNavigation = [
-    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  const managerNavigation: NavigationItem[] = [
+    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6' },
     { name: 'Plantões', href: '/shifts', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+    { name: 'Histórico de Exclusões', href: '/shift-deletion-history', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { name: 'Mural de Trocas', href: '/swap-board', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4' },
     { name: 'Fisioterapeutas', href: '/physiotherapists', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
     { name: 'Equipes', href: '/teams', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
     { name: 'Feriados', href: '/holidays', icon: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' },
   ];
 
-  // Navegação completa para administradores
-  const adminNavigation = [
-    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  const adminNavigation: NavigationItem[] = [
+    { name: 'Dashboard', href: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6' },
     { name: 'Plantões', href: '/shifts', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+    { name: 'Histórico de Exclusões', href: '/shift-deletion-history', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { name: 'Mural de Trocas', href: '/swap-board', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4' },
     { name: 'Fisioterapeutas', href: '/physiotherapists', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
     { name: 'Equipes', href: '/teams', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
@@ -91,18 +85,25 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
     { name: 'Manutenção', href: '/maintenance', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
   ];
 
-  const allNavigation = user.role === 'ADMIN' ? adminNavigation : user.role === 'MANAGER' ? managerNavigation : basicNavigation;
+  const allNavigation =
+    user.role === 'ADMIN'
+      ? adminNavigation
+      : user.role === 'MANAGER'
+      ? managerNavigation
+      : basicNavigation;
+
+  const roleLabel =
+    user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Mobile sidebar */}
-      <div className={`fixed inset-0 flex z-40 md:hidden ${sidebarOpen ? '' : 'hidden'}`}>
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>
-        <div className="relative flex-1 flex flex-col max-w-xs w-full bg-gradient-to-b from-indigo-600 to-indigo-800">
-          <div className="absolute top-0 right-0 -mr-12 pt-2">
+      <div className={`fixed inset-0 z-40 flex md:hidden ${sidebarOpen ? '' : 'hidden'}`}>
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+        <div className="relative flex h-full w-full max-w-xs flex-1 flex-col bg-gradient-to-b from-indigo-600 to-indigo-800">
+          <div className="absolute right-0 top-0 -mr-12 pt-2">
             <button
               type="button"
-              className="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
+              className="ml-1 flex h-10 w-10 items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
               onClick={() => setSidebarOpen(false)}
             >
               <span className="sr-only">Fechar sidebar</span>
@@ -111,13 +112,14 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               </svg>
             </button>
           </div>
-          <div className="flex-1 h-0 pt-4 pb-4 overflow-y-auto">
-            <div className="flex items-center flex-shrink-0 px-4 pb-4 border-b border-indigo-500/30">
-              <div className="relative w-10 h-10 mr-3">
+
+          <div className="flex-1 overflow-y-auto pb-4 pt-4">
+            <div className="flex items-center border-b border-indigo-500/30 px-4 pb-4">
+              <div className="relative mr-3 h-10 w-10">
                 <Image
                   src="/logo.png"
                   alt="Logo"
-                  className="w-full h-full object-contain rounded-lg"
+                  className="h-full w-full rounded-lg object-contain"
                   width={40}
                   height={40}
                   quality={100}
@@ -129,15 +131,17 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
                 <p className="text-xs text-indigo-200">Sistema de Plantões</p>
               </div>
             </div>
-            <nav className="mt-4 px-3 space-y-1">
+
+            <nav className="mt-4 space-y-1 px-3">
               {allNavigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`${pathname === item.href
-                    ? 'bg-white/15 text-white shadow-sm'
-                    : 'text-indigo-100 hover:bg-white/10 hover:text-white'
-                    } group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200`}
+                  className={`group flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                    pathname === item.href
+                      ? 'bg-white/15 text-white shadow-sm'
+                      : 'text-indigo-100 hover:bg-white/10 hover:text-white'
+                  }`}
                   onClick={() => setSidebarOpen(false)}
                 >
                   <svg className="mr-3 h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -148,20 +152,20 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               ))}
             </nav>
           </div>
-          <div className="flex-shrink-0 border-t border-indigo-500/30 p-4 space-y-4">
+
+          <div className="space-y-4 border-t border-indigo-500/30 p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="h-9 w-9 rounded-full bg-white/20 flex items-center justify-center ring-2 ring-white/30">
-                  <span className="text-sm font-semibold text-white">
-                    {user.name.charAt(0).toUpperCase()}
-                  </span>
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/30">
+                  <span className="text-sm font-semibold text-white">{user.name.charAt(0).toUpperCase()}</span>
                 </div>
               </div>
-              <div className="ml-3 flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}</p>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-white">{user.name}</p>
+                <p className="text-xs text-indigo-200">{roleLabel}</p>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-2">
               <Link
                 href="/change-password"
@@ -187,39 +191,37 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
         </div>
       </div>
 
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0">
-        <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-indigo-600 to-indigo-800">
-          <div className="flex-1 flex flex-col pt-4 pb-4 overflow-y-auto">
-            {/* Logo e Título */}
-            <div className="flex items-center flex-shrink-0 px-4 pb-4 border-b border-indigo-500/30">
-              <div className="relative w-10 h-10 mr-3">
-                <Image 
-                   src="/logo.png" 
-                   alt="Logo" 
-                   className="w-full h-full object-contain rounded-lg" 
-                   width={40}
-                   height={40}
-                   quality={100}
-                   priority
-                 />
+      <div className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col">
+        <div className="flex min-h-0 flex-1 flex-col bg-gradient-to-b from-indigo-600 to-indigo-800">
+          <div className="flex flex-1 flex-col overflow-y-auto pb-4 pt-4">
+            <div className="flex items-center border-b border-indigo-500/30 px-4 pb-4">
+              <div className="relative mr-3 h-10 w-10">
+                <Image
+                  src="/logo.png"
+                  alt="Logo"
+                  className="h-full w-full rounded-lg object-contain"
+                  width={40}
+                  height={40}
+                  quality={100}
+                  priority
+                />
               </div>
               <div>
                 <h1 className="text-lg font-semibold text-white">Gestão Furquim</h1>
                 <p className="text-xs text-indigo-200">Sistema de Plantões</p>
               </div>
             </div>
-            
-            {/* Navegação */}
-            <nav className="mt-4 flex-1 px-3 space-y-1">
+
+            <nav className="mt-4 flex-1 space-y-1 px-3">
               {allNavigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`${pathname === item.href
-                    ? 'bg-white/15 text-white shadow-sm'
-                    : 'text-indigo-100 hover:bg-white/10 hover:text-white'
-                    } group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200`}
+                  className={`group flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                    pathname === item.href
+                      ? 'bg-white/15 text-white shadow-sm'
+                      : 'text-indigo-100 hover:bg-white/10 hover:text-white'
+                  }`}
                 >
                   <svg className="mr-3 h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
@@ -229,24 +231,21 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               ))}
             </nav>
           </div>
-          
-          {/* Usuário */}
-          <div className="flex-shrink-0 border-t border-indigo-500/30 p-4">
+
+          <div className="border-t border-indigo-500/30 p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="h-9 w-9 rounded-full bg-white/20 flex items-center justify-center ring-2 ring-white/30">
-                  <span className="text-sm font-semibold text-white">
-                    {user.name.charAt(0).toUpperCase()}
-                  </span>
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/30">
+                  <span className="text-sm font-semibold text-white">{user.name.charAt(0).toUpperCase()}</span>
                 </div>
               </div>
-              <div className="ml-3 flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                <p className="text-xs text-indigo-200">{user.role === 'ADMIN' ? 'Administrador' : user.role === 'MANAGER' ? 'Gestor' : 'Usuário'}</p>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-white">{user.name}</p>
+                <p className="text-xs text-indigo-200">{roleLabel}</p>
               </div>
               <Link
                 href="/change-password"
-                className="ml-2 p-2 rounded-lg text-indigo-200 hover:text-white hover:bg-white/10 transition-colors"
+                className="ml-2 rounded-lg p-2 text-indigo-200 transition-colors hover:bg-white/10 hover:text-white"
                 title="Trocar Senha"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -255,7 +254,7 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
               </Link>
               <button
                 onClick={handleLogout}
-                className="ml-2 p-2 rounded-lg text-indigo-200 hover:text-white hover:bg-white/10 transition-colors"
+                className="ml-2 rounded-lg p-2 text-indigo-200 transition-colors hover:bg-white/10 hover:text-white"
                 title="Sair"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -267,12 +266,11 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="md:pl-64 flex flex-col flex-1">
-        <div className="sticky top-0 z-10 md:hidden pl-1 pt-1 sm:pl-3 sm:pt-3 bg-gray-50">
+      <div className="flex flex-1 flex-col md:pl-64">
+        <div className="sticky top-0 z-10 bg-gray-50 pl-1 pt-1 md:hidden sm:pl-3 sm:pt-3">
           <button
             type="button"
-            className="-ml-0.5 -mt-0.5 h-12 w-12 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+            className="-ml-0.5 -mt-0.5 inline-flex h-12 w-12 items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
             onClick={() => setSidebarOpen(true)}
           >
             <span className="sr-only">Abrir sidebar</span>
@@ -281,8 +279,9 @@ export default function AuthLayout({ children, requiredRole, title, fullWidth }:
             </svg>
           </button>
         </div>
+
         <main className="flex-1">
-          <div className="py-6 h-full">
+          <div className="h-full py-6">
             <div className={`${fullWidth ? 'w-full' : 'max-w-7xl'} mx-auto px-4 sm:px-6 md:px-8`}>
               {title && (
                 <div className="mb-6">
