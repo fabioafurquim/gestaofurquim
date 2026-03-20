@@ -1,10 +1,10 @@
-import { ShiftPeriod } from '@prisma/client';
+import { ShiftPeriod, ShiftSlotDayType } from '@prisma/client';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
 const PAGE_MARGIN = 18;
-const LABEL_COLUMN_WIDTH = 78;
+const LABEL_COLUMN_WIDTH = 92;
 const HEADER_BLOCK_HEIGHT = 70;
 const BASE_WEEK_TITLE_HEIGHT = 11;
 const BASE_WEEK_HEADER_ROW_HEIGHT = 14;
@@ -21,28 +21,6 @@ const PERIOD_LABELS: Record<ShiftPeriod, string> = {
 };
 
 const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-
-const PERIOD_SLOT_FIELDS: Record<
-  ShiftPeriod,
-  { weekday: keyof MonthlyExportTeam; weekend: keyof MonthlyExportTeam }
-> = {
-  MORNING: {
-    weekday: 'weekdayMorningSlots',
-    weekend: 'weekendMorningSlots',
-  },
-  INTERMEDIATE: {
-    weekday: 'weekdayIntermediateSlots',
-    weekend: 'weekendIntermediateSlots',
-  },
-  AFTERNOON: {
-    weekday: 'weekdayAfternoonSlots',
-    weekend: 'weekendAfternoonSlots',
-  },
-  NIGHT: {
-    weekday: 'weekdayNightSlots',
-    weekend: 'weekendNightSlots',
-  },
-};
 
 const COLORS = {
   pageBackground: rgb(0.983, 0.988, 0.995),
@@ -86,17 +64,18 @@ const PERIOD_COLORS: Record<ShiftPeriod, { labelFill: RGB; valueFill: RGB; label
   },
 };
 
+export interface MonthlyExportTeamSlot {
+  id: number;
+  period: ShiftPeriod;
+  dayType: ShiftSlotDayType;
+  description: string;
+  sortOrder: number;
+}
+
 export interface MonthlyExportTeam {
   id: number;
   name: string;
-  weekdayMorningSlots: number;
-  weekdayIntermediateSlots: number;
-  weekdayAfternoonSlots: number;
-  weekdayNightSlots: number;
-  weekendMorningSlots: number;
-  weekendIntermediateSlots: number;
-  weekendAfternoonSlots: number;
-  weekendNightSlots: number;
+  shiftSlots: MonthlyExportTeamSlot[];
 }
 
 export interface MonthlyExportShift {
@@ -105,6 +84,13 @@ export interface MonthlyExportShift {
   period: ShiftPeriod;
   physiotherapist: {
     name: string;
+  };
+  shiftTeamSlot: {
+    id: number;
+    description: string;
+    sortOrder: number;
+    dayType: ShiftSlotDayType;
+    period: ShiftPeriod;
   };
 }
 
@@ -120,16 +106,17 @@ interface CalendarDay {
   date: Date | null;
 }
 
-interface WeekSection {
-  title: string;
-  days: CalendarDay[];
-  rows: WeekRow[];
-}
-
-interface WeekRow {
+interface SlotRow {
+  slotId: number;
   label: string;
   period: ShiftPeriod;
   values: string[];
+}
+
+interface WeekSection {
+  title: string;
+  days: CalendarDay[];
+  rows: SlotRow[];
 }
 
 interface LayoutMetrics {
@@ -144,7 +131,8 @@ interface LayoutMetrics {
   valueFontSize: number;
 }
 
-type ShiftIndex = Record<string, Record<ShiftPeriod, string[]>>;
+type ShiftIndex = Record<string, Record<number, string>>;
+type SlotRegistry = Map<number, MonthlyExportTeamSlot>;
 
 export async function generateMonthlyShiftPdf({
   team,
@@ -157,9 +145,10 @@ export async function generateMonthlyShiftPdf({
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const holidays = new Set(holidayDates);
+  const slotRegistry = buildSlotRegistry(team.shiftSlots, shifts);
   const shiftIndex = buildShiftIndex(shifts);
   const weeks = buildWeeksForMonth(year, month);
-  const sections = weeks.map((week, index) => buildWeekSection(week, team, holidays, shiftIndex, index + 1));
+  const sections = weeks.map((week, index) => buildWeekSection(week, holidays, shiftIndex, slotRegistry, index + 1));
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   const layout = calculateLayout(sections);
 
@@ -178,6 +167,26 @@ export async function generateMonthlyShiftPdf({
   return pdfDoc.save();
 }
 
+function buildSlotRegistry(teamSlots: MonthlyExportTeamSlot[], shifts: MonthlyExportShift[]): SlotRegistry {
+  const registry = new Map<number, MonthlyExportTeamSlot>();
+
+  for (const slot of teamSlots) {
+    registry.set(slot.id, slot);
+  }
+
+  for (const shift of shifts) {
+    registry.set(shift.shiftTeamSlot.id, {
+      id: shift.shiftTeamSlot.id,
+      description: shift.shiftTeamSlot.description,
+      sortOrder: shift.shiftTeamSlot.sortOrder,
+      dayType: shift.shiftTeamSlot.dayType,
+      period: shift.shiftTeamSlot.period,
+    });
+  }
+
+  return registry;
+}
+
 function drawPageBackground(page: PDFPage) {
   page.drawRectangle({
     x: 0,
@@ -191,30 +200,14 @@ function drawPageBackground(page: PDFPage) {
 function buildShiftIndex(shifts: MonthlyExportShift[]): ShiftIndex {
   const index = {} as ShiftIndex;
 
-  const sortedShifts = [...shifts].sort((left, right) => {
-    const dateCompare = formatStoredDate(left.date).localeCompare(formatStoredDate(right.date));
-    if (dateCompare !== 0) return dateCompare;
-
-    if (left.period !== right.period) {
-      return PERIODS.indexOf(left.period) - PERIODS.indexOf(right.period);
-    }
-
-    return left.physiotherapist.name.localeCompare(right.physiotherapist.name, 'pt-BR');
-  });
-
-  for (const shift of sortedShifts) {
+  for (const shift of shifts) {
     const dateKey = formatStoredDate(shift.date);
 
     if (!index[dateKey]) {
-      index[dateKey] = {
-        MORNING: [],
-        INTERMEDIATE: [],
-        AFTERNOON: [],
-        NIGHT: [],
-      };
+      index[dateKey] = {};
     }
 
-    index[dateKey][shift.period].push(shift.physiotherapist.name);
+    index[dateKey][shift.shiftTeamSlot.id] = shift.physiotherapist.name;
   }
 
   return index;
@@ -255,35 +248,28 @@ function buildWeeksForMonth(year: number, month: number): CalendarDay[][] {
 
 function buildWeekSection(
   days: CalendarDay[],
-  team: MonthlyExportTeam,
   holidays: Set<string>,
   shiftIndex: ShiftIndex,
+  slotRegistry: SlotRegistry,
   weekIndex: number
 ): WeekSection {
-  const rows: WeekRow[] = [];
+  const rows: SlotRow[] = [];
 
   for (const period of PERIODS) {
-    const maxSlots = Math.max(0, ...days.map((day) => getSlotCount(team, day.date, period, holidays)));
+    const slotIds = getWeekSlotIdsForPeriod(days, period, holidays, shiftIndex, slotRegistry);
 
-    if (maxSlots === 0) {
-      continue;
-    }
+    for (const slotId of slotIds) {
+      const slot = slotRegistry.get(slotId);
+      if (!slot) continue;
 
-    for (let slotIndex = 0; slotIndex < maxSlots; slotIndex += 1) {
       rows.push({
-        label: maxSlots === 1 ? PERIOD_LABELS[period] : `${PERIOD_LABELS[period]} ${slotIndex + 1}`,
+        slotId,
         period,
+        label: `${PERIOD_LABELS[period]} - ${slot.description}`,
         values: days.map((day) => {
           if (!day.date) return '';
-
           const dateKey = formatLocalDate(day.date);
-          const slotCount = getSlotCount(team, day.date, period, holidays);
-
-          if (slotIndex >= slotCount) {
-            return '';
-          }
-
-          return formatDisplayName(shiftIndex[dateKey]?.[period]?.[slotIndex] ?? '');
+          return formatDisplayName(shiftIndex[dateKey]?.[slotId] ?? '');
         }),
       });
     }
@@ -294,6 +280,49 @@ function buildWeekSection(
     days,
     rows,
   };
+}
+
+function getWeekSlotIdsForPeriod(
+  days: CalendarDay[],
+  period: ShiftPeriod,
+  holidays: Set<string>,
+  shiftIndex: ShiftIndex,
+  slotRegistry: SlotRegistry
+) {
+  const slotMap = new Map<number, MonthlyExportTeamSlot>();
+
+  for (const day of days) {
+    if (!day.date) continue;
+
+    const dayType = getDayType(day.date, holidays);
+
+    for (const slot of slotRegistry.values()) {
+      if (slot.period === period && slot.dayType === dayType) {
+        slotMap.set(slot.id, slot);
+      }
+    }
+
+    const dateKey = formatLocalDate(day.date);
+    const shiftSlots = shiftIndex[dateKey] ?? {};
+
+    for (const slotIdKey of Object.keys(shiftSlots)) {
+      const slotId = Number(slotIdKey);
+      const slot = slotRegistry.get(slotId);
+      if (slot && slot.period === period && slot.dayType === dayType) {
+        slotMap.set(slot.id, slot);
+      }
+    }
+  }
+
+  return [...slotMap.values()]
+    .sort((left, right) => {
+      if (left.sortOrder !== right.sortOrder) {
+        return left.sortOrder - right.sortOrder;
+      }
+
+      return left.description.localeCompare(right.description, 'pt-BR');
+    })
+    .map((slot) => slot.id);
 }
 
 function buildWeekTitle(days: CalendarDay[], weekIndex: number) {
@@ -332,8 +361,8 @@ function calculateLayout(sections: WeekSection[]): LayoutMetrics {
     titleFontSize: Math.max(4.8, 7 * scale),
     dayFontSize: Math.max(4.2, 7.2 * scale),
     dayNumberFontSize: Math.max(4.4, 7.4 * scale),
-    labelFontSize: Math.max(4.1, 6.8 * scale),
-    valueFontSize: Math.max(4.4, 7.4 * scale),
+    labelFontSize: Math.max(4.1, 6.4 * scale),
+    valueFontSize: Math.max(4.6, 7.4 * scale),
   };
 }
 
@@ -454,18 +483,7 @@ function drawWeekSection(
   cursorY -= layout.weekTitleHeight;
 
   drawCell(page, PAGE_MARGIN, cursorY, LABEL_COLUMN_WIDTH, layout.headerRowHeight, COLORS.weekdayHeader, COLORS.border, 0.55);
-  drawCellText(
-    page,
-    'Turno',
-    PAGE_MARGIN,
-    cursorY,
-    LABEL_COLUMN_WIDTH,
-    layout.headerRowHeight,
-    boldFont,
-    layout.dayFontSize,
-    'center',
-    COLORS.mutedInk
-  );
+  drawCellText(page, 'Vaga', PAGE_MARGIN, cursorY, LABEL_COLUMN_WIDTH, layout.headerRowHeight, boldFont, layout.dayFontSize, 'center', COLORS.mutedInk);
 
   DAY_LABELS.forEach((dayLabel, index) => {
     const x = PAGE_MARGIN + LABEL_COLUMN_WIDTH + dayColumnWidth * index;
@@ -477,26 +495,11 @@ function drawWeekSection(
   cursorY -= layout.headerRowHeight;
 
   drawCell(page, PAGE_MARGIN, cursorY, LABEL_COLUMN_WIDTH, layout.headerRowHeight, COLORS.white, COLORS.border, 0.55);
-  drawCellText(
-    page,
-    'Dia',
-    PAGE_MARGIN,
-    cursorY,
-    LABEL_COLUMN_WIDTH,
-    layout.headerRowHeight,
-    boldFont,
-    layout.dayNumberFontSize,
-    'center',
-    COLORS.ink
-  );
+  drawCellText(page, 'Dia', PAGE_MARGIN, cursorY, LABEL_COLUMN_WIDTH, layout.headerRowHeight, boldFont, layout.dayNumberFontSize, 'center', COLORS.ink);
 
   section.days.forEach((day, index) => {
     const x = PAGE_MARGIN + LABEL_COLUMN_WIDTH + dayColumnWidth * index;
-    const fill = !day.date
-      ? COLORS.blankCell
-      : index >= 5
-      ? COLORS.weekendDay
-      : COLORS.weekdayDay;
+    const fill = !day.date ? COLORS.blankCell : index >= 5 ? COLORS.weekendDay : COLORS.weekdayDay;
 
     drawCell(page, x, cursorY, dayColumnWidth, layout.headerRowHeight, fill, COLORS.border, 0.55);
     drawCellText(
@@ -518,16 +521,7 @@ function drawWeekSection(
   for (const row of section.rows) {
     const palette = PERIOD_COLORS[row.period];
 
-    drawCell(
-      page,
-      PAGE_MARGIN,
-      cursorY,
-      LABEL_COLUMN_WIDTH,
-      layout.bodyRowHeight,
-      palette.labelFill,
-      COLORS.border,
-      0.5
-    );
+    drawCell(page, PAGE_MARGIN, cursorY, LABEL_COLUMN_WIDTH, layout.bodyRowHeight, palette.labelFill, COLORS.border, 0.5);
     drawCellText(
       page,
       row.label,
@@ -538,7 +532,9 @@ function drawWeekSection(
       boldFont,
       layout.labelFontSize,
       'left',
-      palette.labelText
+      palette.labelText,
+      layout.labelFontSize,
+      false
     );
 
     row.values.forEach((value, index) => {
@@ -655,23 +651,6 @@ function fitText(
   };
 }
 
-function getSlotCount(
-  team: MonthlyExportTeam,
-  day: Date | null,
-  period: ShiftPeriod,
-  holidays: Set<string>
-): number {
-  if (!day) {
-    return 0;
-  }
-
-  const fields = PERIOD_SLOT_FIELDS[period];
-  const isWeekendOrHoliday = day.getDay() === 0 || day.getDay() === 6 || holidays.has(formatLocalDate(day));
-  const field = isWeekendOrHoliday ? fields.weekend : fields.weekday;
-
-  return Number(team[field] ?? 0);
-}
-
 function formatStoredDate(date: Date): string {
   return [
     date.getUTCFullYear(),
@@ -688,6 +667,10 @@ function formatLocalDate(date: Date): string {
   ].join('-');
 }
 
+function getDayType(date: Date, holidays: Set<string>): ShiftSlotDayType {
+  return date.getDay() === 0 || date.getDay() === 6 || holidays.has(formatLocalDate(date)) ? 'WEEKEND' : 'WEEKDAY';
+}
+
 function getMondayIndex(date: Date) {
   return (date.getDay() + 6) % 7;
 }
@@ -697,8 +680,7 @@ function formatDisplayName(name: string) {
   if (!normalized) return '';
 
   const parts = normalized.split(' ');
-  const displayName =
-    parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1]}`;
+  const displayName = parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1]}`;
 
   return displayName.toLocaleUpperCase('pt-BR');
 }

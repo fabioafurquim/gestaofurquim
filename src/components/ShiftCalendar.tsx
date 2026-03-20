@@ -5,7 +5,7 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { ShiftTeam, ShiftPeriod } from '@prisma/client';
+import { ShiftPeriod, ShiftSlotDayType } from '@prisma/client';
 import ptBrLocale from '@fullcalendar/core/locales/pt-br';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
@@ -28,7 +28,31 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, Users, TrendingUp, Clock, FileDown, Loader2 } from 'lucide-react';
+import { SHIFT_PERIOD_LABELS } from '@/lib/shift-team-slots';
 // Removido import getCurrentUser - agora usamos API route
+
+interface TeamSlot {
+  id: number;
+  period: ShiftPeriod;
+  dayType: ShiftSlotDayType;
+  description: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+interface Team {
+  id: number;
+  name: string;
+  weekdayMorningSlots: number;
+  weekdayIntermediateSlots: number;
+  weekdayAfternoonSlots: number;
+  weekdayNightSlots: number;
+  weekendMorningSlots: number;
+  weekendIntermediateSlots: number;
+  weekendAfternoonSlots: number;
+  weekendNightSlots: number;
+  shiftSlots: TeamSlot[];
+}
 
 const periodColor: Record<ShiftPeriod, string> = {
   MORNING: '#3B82F6', // azul moderno
@@ -52,11 +76,12 @@ export default function ShiftCalendar() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [allPhysiotherapists, setAllPhysiotherapists] = useState<any[]>([]);
-  const [teams, setTeams] = useState<ShiftTeam[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [viewingTeamId, setViewingTeamId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<ShiftPeriod>('MORNING');
   const [selectedPhysioId, setSelectedPhysioId] = useState('');
+  const [selectedSlotId, setSelectedSlotId] = useState('');
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isMobileView, setIsMobileView] = useState(false);
@@ -64,32 +89,61 @@ export default function ShiftCalendar() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [showMobileCalendar, setShowMobileCalendar] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
 
   const currentUser = session?.user;
-  const isCurrentUserPhysiotherapist = currentUser?.role === 'USER' && !!currentUser.physiotherapistId;
+  const canManageShifts = !!currentUser && currentUser.role !== 'USER';
 
-  const canManageShift = (physioId?: number) => {
-    if (!currentUser) return false;
-    if (currentUser.role !== 'USER') return true;
+  const canRequestSwapForShift = (physioId?: number) => {
+    if (!currentUser || currentUser.role !== 'USER') return false;
     return Number(currentUser.physiotherapistId) === Number(physioId);
   };
+
+  const visibleTeams = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'USER' || !currentUser.physiotherapistId) {
+      return teams;
+    }
+
+    const currentPhysio = allPhysiotherapists.find(
+      (physio) => Number(physio.id) === Number(currentUser.physiotherapistId)
+    );
+    const allowedTeamIds = new Set(
+      (currentPhysio?.teams ?? []).map((team: any) => Number(team.shiftTeamId))
+    );
+
+    return teams.filter((team) => allowedTeamIds.has(team.id));
+  }, [allPhysiotherapists, currentUser, teams]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
         const [physiosRes, teamsRes] = await Promise.all([
           fetch('/api/physiotherapists'),
-          fetch('/api/teams')
+          fetch('/api/teams'),
         ]);
         const physiotherapists = await physiosRes.json();
         const teamsData = await teamsRes.json();
+        const holidaysRes = await fetch('/api/holidays');
+        const holidaysData = holidaysRes.ok ? await holidaysRes.json() : [];
         
         setAllPhysiotherapists(physiotherapists);
         setTeams(teamsData);
+        setHolidayDates(
+          new Set(
+            holidaysData.map((holiday: { date: string }) => {
+              const date = new Date(holiday.date);
+              return [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                String(date.getDate()).padStart(2, '0'),
+              ].join('-');
+            })
+          )
+        );
 
         // Se o usuário é USER (fisioterapeuta), pré-selecionar sua primeira equipe
         if (currentUser && currentUser.role === 'USER' && currentUser.physiotherapistId) {
-          const userPhysio = physiotherapists.find((p: any) => p.id === currentUser.physiotherapistId);
+          const userPhysio = physiotherapists.find((p: any) => Number(p.id) === Number(currentUser.physiotherapistId));
           if (userPhysio && userPhysio.teams && userPhysio.teams.length > 0) {
             setViewingTeamId(userPhysio.teams[0].shiftTeamId.toString());
           }
@@ -126,7 +180,7 @@ export default function ShiftCalendar() {
           title: shift.physiotherapist.name,
           start: dateStr,
           allDay: true,
-          editable: canManageShift(shift.physiotherapistId),
+          editable: canManageShifts,
           backgroundColor: periodColor[shift.period as ShiftPeriod],
           borderColor: periodColor[shift.period as ShiftPeriod],
           extendedProps: {
@@ -137,7 +191,10 @@ export default function ShiftCalendar() {
             periodName: periodNames[shift.period as ShiftPeriod],
             periodOrder: periodOrderMap[shift.period as ShiftPeriod],
             physioName: shift.physiotherapist.name,
-            canManage: canManageShift(shift.physiotherapistId),
+            slotId: shift.shiftTeamSlotId,
+            slotDescription: shift.shiftTeamSlot?.description ?? '',
+            canManage: canManageShifts,
+            canRequestSwap: canRequestSwapForShift(shift.physiotherapistId),
           },
         };
       });
@@ -174,7 +231,7 @@ export default function ShiftCalendar() {
           title: `${shift.physiotherapist.name} (${shift.shiftTeam.name})`,
           start: dateStr,
           allDay: true,
-          editable: canManageShift(shift.physiotherapistId),
+          editable: canManageShifts,
           backgroundColor: periodColor[shift.period as ShiftPeriod],
           borderColor: periodColor[shift.period as ShiftPeriod],
           extendedProps: {
@@ -185,7 +242,10 @@ export default function ShiftCalendar() {
             periodName: periodNames[shift.period as ShiftPeriod],
             periodOrder: periodOrderMap[shift.period as ShiftPeriod],
             physioName: shift.physiotherapist.name,
-            canManage: canManageShift(shift.physiotherapistId),
+            slotId: shift.shiftTeamSlotId,
+            slotDescription: shift.shiftTeamSlot?.description ?? '',
+            canManage: canManageShifts,
+            canRequestSwap: canRequestSwapForShift(shift.physiotherapistId),
           },
         };
       });
@@ -205,7 +265,23 @@ export default function ShiftCalendar() {
     } else {
       setEvents([]);
     }
-  }, [viewingTeamId, viewAllTeams, teams, currentUser]);
+  }, [viewingTeamId, viewAllTeams, teams, currentUser, canManageShifts]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'USER') {
+      return;
+    }
+
+    if (visibleTeams.length === 0) {
+      setViewingTeamId('');
+      return;
+    }
+
+    const currentSelectionStillVisible = visibleTeams.some((team) => String(team.id) === viewingTeamId);
+    if (!currentSelectionStillVisible) {
+      setViewingTeamId(String(visibleTeams[0].id));
+    }
+  }, [currentUser, viewingTeamId, visibleTeams]);
 
   // Detectar tamanho da tela para alternar vista mobile
   useEffect(() => {
@@ -233,23 +309,26 @@ export default function ShiftCalendar() {
     let physios = allPhysiotherapists.filter(p => 
       p.teams && p.teams.some((t: any) => t.shiftTeamId === team.id)
     );
-    
-    // Se o usuário é USER (fisioterapeuta), só pode ver a si mesmo
-    if (currentUser && currentUser.role === 'USER' && currentUser.physiotherapistId) {
-      physios = physios.filter(p => p.id === currentUser.physiotherapistId);
-    }
-    
+
     return physios;
-  }, [viewingTeamId, allPhysiotherapists, teams, currentUser]);
+  }, [viewingTeamId, allPhysiotherapists, teams]);
 
   const canManageSelectedEvent = useMemo(() => {
-    return canManageShift(selectedEvent?.extendedProps?.physioId);
+    return canManageShifts;
+  }, [canManageShifts]);
+
+  const canRequestSwapSelectedEvent = useMemo(() => {
+    return canRequestSwapForShift(selectedEvent?.extendedProps?.physioId);
   }, [selectedEvent, currentUser]);
 
-  const handleCloseModal = () => setShowAddModal(false);
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setSelectedSlotId('');
+  };
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setSelectedEvent(null);
+    setSelectedSlotId('');
   };
 
   const handleExportMonthlyPdf = async () => {
@@ -296,32 +375,37 @@ export default function ShiftCalendar() {
   };
 
   const handleDateClick = (arg: any) => {
+    if (!canManageShifts) {
+      return;
+    }
     if (!viewingTeamId) {
       toast.warning('Por favor, selecione uma equipe antes de adicionar um plantão.');
       return;
     }
     setSelectedDate(arg.dateStr);
     
-    // Se o usuário é USER, pré-selecionar ele mesmo
-    if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
-      setSelectedPhysioId(currentUser.physiotherapistId.toString());
-    } else {
-      setSelectedPhysioId('');
-    }
-    
+    setSelectedPhysioId('');
+
     setSelectedPeriod('MORNING');
+    setSelectedSlotId('');
     setShowAddModal(true);
   };
 
   const handleEventClick = (clickInfo: any) => {
     setSelectedEvent(clickInfo.event);
+    setSelectedDate(clickInfo.event.startStr);
     setSelectedPhysioId(clickInfo.event.extendedProps.physioId.toString());
     setSelectedPeriod(clickInfo.event.extendedProps.period);
+    setSelectedSlotId(String(clickInfo.event.extendedProps.slotId ?? ''));
     setShowEditModal(true);
   };
 
   const handleSaveShift = async () => {
-    if (!selectedPhysioId || !selectedDate || !viewingTeamId) {
+    if (!canManageShifts) {
+      toast.error('A criação de plantões é exclusiva da gestão.');
+      return;
+    }
+    if (!selectedPhysioId || !selectedDate || !viewingTeamId || !selectedSlotId) {
       toast.warning('Por favor, preencha todos os campos.');
       return;
     }
@@ -334,6 +418,7 @@ export default function ShiftCalendar() {
           period: selectedPeriod,
           physiotherapistId: parseInt(selectedPhysioId),
           shiftTeamId: parseInt(viewingTeamId),
+          shiftTeamSlotId: parseInt(selectedSlotId),
         }),
       });
       const json = await response.json();
@@ -352,7 +437,7 @@ export default function ShiftCalendar() {
   const handleUpdateShift = async () => {
     if (!selectedEvent) return;
     if (!canManageSelectedEvent) {
-      toast.error('Você só pode alterar os seus próprios plantões.');
+      toast.error('A alteração de plantões é exclusiva da gestão.');
       return;
     }
     try {
@@ -362,6 +447,7 @@ export default function ShiftCalendar() {
         body: JSON.stringify({
           physiotherapistId: parseInt(selectedPhysioId),
           period: selectedPeriod,
+          shiftTeamSlotId: parseInt(selectedSlotId),
         }),
       });
       const json = await response.json();
@@ -377,7 +463,7 @@ export default function ShiftCalendar() {
 
   const handleDeleteShift = async () => {
     if (!canManageSelectedEvent) {
-      toast.error('Você só pode excluir os seus próprios plantões.');
+      toast.error('A exclusão de plantões é exclusiva da gestão.');
       return;
     }
     if (!selectedEvent) return;
@@ -402,9 +488,9 @@ export default function ShiftCalendar() {
     const { event, revert } = dropInfo;
     const shiftId = event.id;
     const newDate = event.startStr;
-    if (!event.extendedProps?.canManage) {
+    if (!canManageShifts || !event.extendedProps?.canManage) {
       revert();
-      toast.error('Você só pode mover os seus próprios plantões.');
+      toast.error('A movimentação de plantões é exclusiva da gestão.');
       return;
     }
     
@@ -421,6 +507,7 @@ export default function ShiftCalendar() {
           date: newDate,
           physiotherapistId: event.extendedProps.physioId,
           period: event.extendedProps.period,
+          shiftTeamSlotId: event.extendedProps.slotId,
         }),
       });
       
@@ -522,7 +609,7 @@ export default function ShiftCalendar() {
     
     for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().split('T')[0];
-      const isWeekendDay = d.getDay() === 0 || d.getDay() === 6;
+      const isWeekendDay = getSlotDayType(d) === 'WEEKEND';
       
       slots[dateStr] = {
         MORNING: { 
@@ -560,7 +647,7 @@ export default function ShiftCalendar() {
     });
     
     return slots;
-  }, [events, viewingTeamId, teams, currentMonth]);
+  }, [events, viewingTeamId, teams, currentMonth, holidayDates]);
 
   // Handler para quando o calendário muda de mês
   const handleDatesSet = (dateInfo: any) => {
@@ -575,6 +662,62 @@ export default function ShiftCalendar() {
     const team = teams.find(t => t.id === Number(viewingTeamId));
     return team && (team.weekdayIntermediateSlots > 0 || team.weekendIntermediateSlots > 0);
   };
+
+  function getSlotDayType(dateValue: string | Date): ShiftSlotDayType {
+    const date = typeof dateValue === 'string'
+      ? (() => {
+          const [year, month, day] = dateValue.split('-').map(Number);
+          return new Date(year, month - 1, day);
+        })()
+      : dateValue;
+    const dateKey = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    return date.getDay() === 0 || date.getDay() === 6 || holidayDates.has(dateKey) ? 'WEEKEND' : 'WEEKDAY';
+  }
+
+  const availableSlotOptions = useMemo(() => {
+    if (!viewingTeamId || !selectedDate) return [];
+
+    const team = teams.find((item) => item.id === Number(viewingTeamId));
+    if (!team) return [];
+
+    const dayType = getSlotDayType(selectedDate);
+    const occupiedSlotIds = new Set(
+      events
+        .filter((event) => {
+          const sameDate = event.start === selectedDate;
+          const samePeriod = event.extendedProps?.period === selectedPeriod;
+          const sameTeam = Number(event.extendedProps?.teamId) === Number(viewingTeamId);
+          const differentShift = selectedEvent ? String(event.id) !== String(selectedEvent.id) : true;
+          return sameDate && samePeriod && sameTeam && differentShift;
+        })
+        .map((event) => Number(event.extendedProps?.slotId))
+    );
+
+    return (team.shiftSlots ?? [])
+      .filter((slot) => slot.isActive && slot.period === selectedPeriod && slot.dayType === dayType)
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((slot) => ({
+        ...slot,
+        occupied: occupiedSlotIds.has(slot.id),
+      }));
+  }, [events, selectedDate, selectedEvent, selectedPeriod, teams, viewingTeamId]);
+
+  useEffect(() => {
+    if (availableSlotOptions.length === 0) {
+      setSelectedSlotId('');
+      return;
+    }
+
+    const currentSelectionStillValid = availableSlotOptions.some((slot) => String(slot.id) === selectedSlotId);
+    if (!currentSelectionStillValid) {
+      setSelectedSlotId(String(availableSlotOptions[0].id));
+    }
+  }, [availableSlotOptions, selectedSlotId]);
 
   // Agrupar plantões por data para vista mobile
   const shiftsGroupedByDate = useMemo(() => {
@@ -646,7 +789,7 @@ export default function ShiftCalendar() {
                     setViewingTeamId(value);
                   }
                 }}
-                disabled={currentUser?.role === 'USER'}
+                disabled={currentUser?.role === 'USER' && visibleTeams.length <= 1}
               >
                 <SelectTrigger className="w-full h-11 bg-gray-50 border-gray-200">
                   <SelectValue placeholder="Selecione uma equipe" />
@@ -657,7 +800,7 @@ export default function ShiftCalendar() {
                       📊 Todas as Equipes (Visão Gerencial)
                     </SelectItem>
                   )}
-                  {teams.map(team => (
+                  {visibleTeams.map(team => (
                     <SelectItem key={team.id} value={team.id.toString()}>
                       {team.name}
                     </SelectItem>
@@ -666,7 +809,7 @@ export default function ShiftCalendar() {
               </Select>
               {currentUser?.role === 'USER' && (
                 <p className="text-xs text-gray-500 mt-1.5">
-                  Visualizando sua equipe
+                  {visibleTeams.length > 1 ? 'Selecione uma das suas equipes' : 'Visualizando sua equipe'}
                 </p>
               )}
               {viewAllTeams && currentUser?.role === 'ADMIN' && (
@@ -906,28 +1049,30 @@ export default function ShiftCalendar() {
                           </div>
                           <div className="flex-1 text-left min-w-0">
                             <p className="font-medium text-gray-900 text-sm truncate">{shift.title}</p>
-                            <p className="text-xs text-gray-500">{shift.extendedProps.periodName}</p>
+                            <p className="text-xs text-gray-500">
+                              {shift.extendedProps.periodName}
+                              {shift.extendedProps.slotDescription ? ` • ${shift.extendedProps.slotDescription}` : ''}
+                            </p>
                           </div>
                         </button>
                       ))}
                     </div>
                     
                     {/* Botão para adicionar plantão neste dia */}
-                    <button
-                      onClick={() => {
-                        setSelectedDate(date);
-                        if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
-                          setSelectedPhysioId(currentUser.physiotherapistId.toString());
-                        } else {
+                    {canManageShifts && (
+                      <button
+                        onClick={() => {
+                          setSelectedDate(date);
                           setSelectedPhysioId('');
-                        }
-                        setSelectedPeriod('MORNING');
-                        setShowAddModal(true);
-                      }}
-                      className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                    >
-                      + Adicionar plantão neste dia
-                    </button>
+                          setSelectedPeriod('MORNING');
+                          setSelectedSlotId('');
+                          setShowAddModal(true);
+                        }}
+                        className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                      >
+                        + Adicionar plantão neste dia
+                      </button>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -935,15 +1080,17 @@ export default function ShiftCalendar() {
           )}
           
           {/* Botão Flutuante para Adicionar Plantão - Mobile com Calendário */}
-          <button
-            onClick={() => setShowMobileCalendar(true)}
-            className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-50"
-            style={{ boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)' }}
-          >
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+          {canManageShifts && (
+            <button
+              onClick={() => setShowMobileCalendar(true)}
+              className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-50"
+              style={{ boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)' }}
+            >
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          )}
           
           {/* Mini Calendário Mobile para Seleção de Data */}
           {showMobileCalendar && (
@@ -1015,13 +1162,13 @@ export default function ShiftCalendar() {
                         <button
                           key={day}
                           onClick={() => {
-                            setSelectedDate(dateStr);
-                            if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
-                              setSelectedPhysioId(currentUser.physiotherapistId.toString());
-                            } else {
-                              setSelectedPhysioId('');
+                            if (!canManageShifts) {
+                              return;
                             }
+                            setSelectedDate(dateStr);
+                            setSelectedPhysioId('');
                             setSelectedPeriod('MORNING');
+                            setSelectedSlotId('');
                             setShowMobileCalendar(false);
                             setShowAddModal(true);
                           }}
@@ -1042,25 +1189,24 @@ export default function ShiftCalendar() {
                   })()}
                 </div>
                 
-                <div className="mt-4 pt-4 border-t">
-                  <button
-                    onClick={() => {
-                      const today = new Date().toISOString().split('T')[0];
-                      setSelectedDate(today);
-                      if (currentUser?.role === 'USER' && currentUser.physiotherapistId) {
-                        setSelectedPhysioId(currentUser.physiotherapistId.toString());
-                      } else {
+                {canManageShifts && (
+                  <div className="mt-4 pt-4 border-t">
+                    <button
+                      onClick={() => {
+                        const today = new Date().toISOString().split('T')[0];
+                        setSelectedDate(today);
                         setSelectedPhysioId('');
-                      }
-                      setSelectedPeriod('MORNING');
-                      setShowMobileCalendar(false);
-                      setShowAddModal(true);
-                    }}
-                    className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 active:bg-indigo-800"
-                  >
-                    Adicionar Plantão Hoje
-                  </button>
-                </div>
+                        setSelectedPeriod('MORNING');
+                        setSelectedSlotId('');
+                        setShowMobileCalendar(false);
+                        setShowAddModal(true);
+                      }}
+                      className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 active:bg-indigo-800"
+                    >
+                      Adicionar Plantão Hoje
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1140,16 +1286,22 @@ export default function ShiftCalendar() {
               const { event } = arg;
               const periodName = event.extendedProps?.periodName || '';
               const teamName = event.extendedProps?.teamName || '';
+              const slotDescription = event.extendedProps?.slotDescription || '';
               
               return (
                 <div 
                   className="fc-event-main-frame"
-                  title={`${event.title}\n${periodName}\nEquipe: ${teamName}\nClique para editar`}
+                  title={`${event.title}\n${periodName}${slotDescription ? ` • ${slotDescription}` : ''}\nEquipe: ${teamName}\nClique para visualizar`}
                 >
                   <div className="fc-event-title-container">
                     <div className="fc-event-title fc-sticky">
                       {event.title}
                     </div>
+                    {slotDescription && (
+                      <div className="text-[10px] opacity-90 truncate">
+                        {slotDescription}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1161,7 +1313,7 @@ export default function ShiftCalendar() {
               if (!team) return;
               
               const dateStr = arg.date.toISOString().split('T')[0];
-              const isWeekendDay = arg.date.getDay() === 0 || arg.date.getDay() === 6;
+              const isWeekendDay = getSlotDayType(arg.date) === 'WEEKEND';
               
               // Total de vagas no dia = soma de todos os slots de todos os períodos
               const totalSlots = 
@@ -1272,11 +1424,31 @@ export default function ShiftCalendar() {
             </div>
 
             <div className="space-y-2">
+              <Label className="text-base font-medium">Vaga / Cobertura</Label>
+              <Select value={selectedSlotId} onValueChange={setSelectedSlotId}>
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Selecione a vaga" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSlotOptions.map((slot) => (
+                    <SelectItem key={slot.id} value={slot.id.toString()} className="h-12 text-base" disabled={slot.occupied}>
+                      {slot.description}{slot.occupied ? ' (ocupada)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {availableSlotOptions.length === 0 && (
+                <p className="text-sm text-amber-600">
+                  Nenhuma vaga disponível para este período nesta data.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label className="text-base font-medium">Fisioterapeuta</Label>
               <Select 
                 value={selectedPhysioId} 
                 onValueChange={setSelectedPhysioId}
-                disabled={currentUser?.role === 'USER'}
               >
                 <SelectTrigger className="h-12 text-base">
                   <SelectValue placeholder="Selecione um fisioterapeuta" />
@@ -1289,11 +1461,6 @@ export default function ShiftCalendar() {
                   ))}
                 </SelectContent>
               </Select>
-              {currentUser?.role === 'USER' && (
-                <p className="text-sm text-gray-500">
-                  Você só pode criar plantões para si mesmo
-                </p>
-              )}
             </div>
           </div>
 
@@ -1307,6 +1474,7 @@ export default function ShiftCalendar() {
             </Button>
             <Button 
               onClick={handleSaveShift}
+              disabled={availableSlotOptions.length === 0}
               className="h-12 text-base w-full sm:w-auto"
             >
               Salvar Plantão
@@ -1320,7 +1488,7 @@ export default function ShiftCalendar() {
         <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] p-4 sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg">
-              Editar Plantão
+              {canManageSelectedEvent ? 'Editar Plantão' : 'Visualizar Plantão'}
             </DialogTitle>
             <p className="text-sm text-gray-500">
               {(() => {
@@ -1360,11 +1528,31 @@ export default function ShiftCalendar() {
             </div>
 
             <div className="space-y-2">
+              <Label className="text-base font-medium">Vaga / Cobertura</Label>
+              <Select
+                value={selectedSlotId}
+                onValueChange={setSelectedSlotId}
+                disabled={!canManageSelectedEvent}
+              >
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Selecione a vaga" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSlotOptions.map((slot) => (
+                    <SelectItem key={slot.id} value={slot.id.toString()} className="h-12 text-base" disabled={slot.occupied}>
+                      {slot.description}{slot.occupied ? ' (ocupada)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label className="text-base font-medium">Fisioterapeuta</Label>
               <Select 
                 value={selectedPhysioId} 
                 onValueChange={setSelectedPhysioId}
-                disabled={currentUser?.role === 'USER'}
+                disabled={!canManageSelectedEvent}
               >
                 <SelectTrigger className="h-12 text-base">
                   <SelectValue placeholder="Selecione um fisioterapeuta" />
@@ -1377,24 +1565,25 @@ export default function ShiftCalendar() {
                   ))}
                 </SelectContent>
               </Select>
-              {currentUser?.role === 'USER' && (
+              {!canManageSelectedEvent && (
                 <p className="text-sm text-gray-500">
-                  Você só pode editar seus próprios plantões
+                  Alterações e exclusões são feitas apenas pela gestão.
                 </p>
               )}
             </div>
           </div>
 
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-            {/* Botões empilhados verticalmente em mobile */}
             <div className="flex flex-col sm:flex-row gap-2 w-full">
-              <Button 
-                onClick={handleUpdateShift}
-                disabled={!canManageSelectedEvent}
-                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
-              >
-                ✓ Salvar Alterações
-              </Button>
+              {canManageSelectedEvent && (
+                <Button 
+                  onClick={handleUpdateShift}
+                  disabled={!canManageSelectedEvent}
+                  className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
+                >
+                  ✓ Salvar Alterações
+                </Button>
+              )}
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -1402,7 +1591,7 @@ export default function ShiftCalendar() {
                     window.location.href = `/swap-board?shiftId=${selectedEvent.id}`;
                   }
                 }}
-                disabled={!canManageSelectedEvent}
+                disabled={!canRequestSwapSelectedEvent}
                 className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1"
               >
                 🔄 Solicitar Troca
@@ -1416,14 +1605,16 @@ export default function ShiftCalendar() {
               >
                 Cancelar
               </Button>
-              <Button 
-                variant="destructive" 
-                onClick={handleDeleteShift}
-                disabled={!canManageSelectedEvent}
-                className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1 sm:w-auto sm:flex-none"
-              >
-                🗑️ Excluir
-              </Button>
+              {canManageSelectedEvent && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleDeleteShift}
+                  disabled={!canManageSelectedEvent}
+                  className="h-auto min-h-11 text-sm w-full whitespace-normal break-words px-3 py-3 text-center sm:flex-1 sm:w-auto sm:flex-none"
+                >
+                  🗑️ Excluir
+                </Button>
+              )}
             </div>
           </DialogFooter>
         </DialogContent>

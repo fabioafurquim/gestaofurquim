@@ -42,14 +42,17 @@ export async function GET(request: NextRequest) {
     select: {
       id: true,
       name: true,
-      weekdayMorningSlots: true,
-      weekdayIntermediateSlots: true,
-      weekdayAfternoonSlots: true,
-      weekdayNightSlots: true,
-      weekendMorningSlots: true,
-      weekendIntermediateSlots: true,
-      weekendAfternoonSlots: true,
-      weekendNightSlots: true,
+      shiftSlots: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          period: true,
+          dayType: true,
+          description: true,
+          sortOrder: true,
+        },
+        orderBy: [{ dayType: 'asc' }, { period: 'asc' }, { sortOrder: 'asc' }],
+      },
     },
   });
 
@@ -91,6 +94,15 @@ export async function GET(request: NextRequest) {
         id: true,
         date: true,
         period: true,
+        shiftTeamSlot: {
+          select: {
+            id: true,
+            description: true,
+            sortOrder: true,
+            dayType: true,
+            period: true,
+          },
+        },
         physiotherapist: {
           select: {
             name: true,
@@ -99,6 +111,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: [
         { date: 'asc' },
+        { shiftTeamSlot: { sortOrder: 'asc' } },
         { physiotherapist: { name: 'asc' } },
       ],
     }),

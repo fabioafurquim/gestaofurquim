@@ -40,7 +40,15 @@ export async function GET() {
     const todayStartUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0));
     const tomorrowStartUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0));
 
-    const [totalPhysiotherapists, activePhysiotherapists, totalTeams, shiftsThisMonth, shiftsToday, latestShifts] =
+    const [
+      totalPhysiotherapists,
+      activePhysiotherapists,
+      totalTeams,
+      shiftsThisMonth,
+      shiftsToday,
+      pendingApprovalSwapRequests,
+      latestShifts,
+    ] =
       await Promise.all([
         prisma.physiotherapist.count(),
         prisma.physiotherapist.count({
@@ -61,6 +69,11 @@ export async function GET() {
               gte: todayStartUtc,
               lt: tomorrowStartUtc,
             },
+          },
+        }),
+        prisma.shiftSwapRequest.count({
+          where: {
+            status: 'PENDING_APPROVAL',
           },
         }),
         prisma.shift.findMany({
@@ -98,6 +111,7 @@ export async function GET() {
         totalTeams,
         shiftsThisMonth,
         shiftsToday,
+        pendingApprovalSwapRequests,
       },
       recentShifts,
     });

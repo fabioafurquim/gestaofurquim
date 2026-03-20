@@ -20,8 +20,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'ID de equipe inválido' }, { status: 400 });
     }
 
+    const currentPhysioId = session.user.physiotherapistId
+      ? typeof session.user.physiotherapistId === 'string'
+        ? parseInt(session.user.physiotherapistId, 10)
+        : session.user.physiotherapistId
+      : null;
+
     const physios = await prisma.physiotherapistTeam.findMany({
-      where: { shiftTeamId: teamId },
+      where: {
+        shiftTeamId: teamId,
+        ...(currentPhysioId ? { physiotherapistId: { not: currentPhysioId } } : {}),
+      },
       include: { physiotherapist: true },
       orderBy: {
         physiotherapist: { name: 'asc' },

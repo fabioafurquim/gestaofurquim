@@ -1,16 +1,16 @@
 import { ShiftPeriod } from '@prisma/client';
-import { NextResponse, NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/auth-helpers';
-import { prisma } from '@/lib/prisma';
-import { isWeekend, isHoliday } from '@/lib/date-utils';
-import { sendInstantNotification } from '@/lib/notifications';
+import { NextRequest, NextResponse } from 'next/server';
 
-// GET all shifts for a specific team
+import { requireAuth } from '@/lib/auth-helpers';
+import { isHoliday, isWeekend } from '@/lib/date-utils';
+import { sendInstantNotification } from '@/lib/notifications';
+import { prisma } from '@/lib/prisma';
+import { getSlotDayTypeForDate } from '@/lib/shift-team-slots';
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const teamId = searchParams.get('teamId');
 
-  // Verificar autenticação
   const { error, user: currentUser } = await requireAuth();
   if (error) return error;
 
@@ -19,23 +19,21 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Construir filtros baseados no role do usuário
-    const whereClause: any = {
-      shiftTeamId: parseInt(teamId),
+    const whereClause: { shiftTeamId: number } = {
+      shiftTeamId: parseInt(teamId, 10),
     };
 
-    // Se o usuário não é ADMIN, só pode ver plantões das suas próprias equipes
     if (currentUser.role === 'USER' && currentUser.physiotherapistId) {
       const userPhysio = await prisma.physiotherapist.findUnique({
         where: { id: currentUser.physiotherapistId },
-        include: { teams: true }
+        include: { teams: true },
       });
-      
+
       if (!userPhysio) {
         return NextResponse.json({ error: 'Fisioterapeuta do usuário não encontrado' }, { status: 403 });
       }
-      
-      const userBelongsToTeam = userPhysio.teams.some(team => team.shiftTeamId === parseInt(teamId));
+
+      const userBelongsToTeam = userPhysio.teams.some((team) => team.shiftTeamId === parseInt(teamId, 10));
       if (!userBelongsToTeam) {
         return NextResponse.json({ error: 'Acesso negado a esta equipe' }, { status: 403 });
       }
@@ -43,52 +41,55 @@ export async function GET(request: NextRequest) {
 
     const shifts = await prisma.shift.findMany({
       where: whereClause,
-      include: { physiotherapist: true, shiftTeam: true },
-      orderBy: { date: 'asc' },
+      include: {
+        physiotherapist: true,
+        shiftTeam: true,
+        shiftTeamSlot: true,
+      },
+      orderBy: [{ date: 'asc' }, { shiftTeamSlot: { sortOrder: 'asc' } }, { physiotherapist: { name: 'asc' } }],
     });
+
     return NextResponse.json(shifts);
   } catch (error) {
-    console.error("Erro ao buscar plantões:", error);
+    console.error('Erro ao buscar plantões:', error);
     return NextResponse.json({ error: 'Erro ao buscar plantões' }, { status: 500 });
   }
 }
 
-// POST a new shift
 export async function POST(request: Request) {
   try {
-    // Verificar autenticação
     const { error, user: currentUser } = await requireAuth();
     if (error) return error;
 
+    if (currentUser.role === 'USER') {
+      return NextResponse.json(
+        { error: 'A criação de plantões é exclusiva da gestão.' },
+        { status: 403 }
+      );
+    }
+
     const data = await request.json();
-    const { date, period, physiotherapistId, shiftTeamId } = data as {
+    const { date, period, physiotherapistId, shiftTeamId, shiftTeamSlotId } = data as {
       date: string;
       period: ShiftPeriod;
       physiotherapistId: number | string;
       shiftTeamId: number | string;
+      shiftTeamSlotId?: number | string;
     };
 
     if (!date || !period || !physiotherapistId || !shiftTeamId) {
       return NextResponse.json({ error: 'Todos os campos são obrigatórios' }, { status: 400 });
     }
 
-    // Validar se usuário USER só pode criar plantões para si mesmo
-    if (currentUser.role === 'USER') {
-      if (!currentUser.physiotherapistId || currentUser.physiotherapistId !== Number(physiotherapistId)) {
-        return NextResponse.json({ error: 'Você só pode criar plantões para si mesmo' }, { status: 403 });
-      }
-    }
-
-    const physio = await prisma.physiotherapist.findUnique({ 
+    const physio = await prisma.physiotherapist.findUnique({
       where: { id: Number(physiotherapistId) },
-      include: { teams: true }
+      include: { teams: true },
     });
+
     if (!physio) {
       return NextResponse.json({ error: 'Fisioterapeuta inválido' }, { status: 400 });
     }
 
-    // Criar data no formato UTC para evitar problemas de timezone
-    // A data vem como string YYYY-MM-DD do frontend
     const [year, month, day] = date.split('-').map(Number);
     const zonedDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 
@@ -96,103 +97,81 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Fisioterapeuta indisponível (inativo ou desligado para a data)' }, { status: 400 });
     }
 
-    // Verificar se o fisioterapeuta pertence à equipe selecionada (relação many-to-many)
-    const belongsToTeam = physio.teams.some(team => team.shiftTeamId === Number(shiftTeamId));
+    const belongsToTeam = physio.teams.some((team) => team.shiftTeamId === Number(shiftTeamId));
     if (!belongsToTeam) {
       return NextResponse.json({ error: 'Fisioterapeuta não pertence à equipe selecionada' }, { status: 400 });
     }
 
-    // Buscar dados da equipe para validar slots disponíveis
+    const isWeekendOrHoliday = isWeekend(zonedDate) || (await isHoliday(zonedDate));
+    const slotDayType = getSlotDayTypeForDate(zonedDate, isWeekendOrHoliday);
+
     const shiftTeam = await prisma.shiftTeam.findUnique({
-      where: { id: Number(shiftTeamId) }
+      where: { id: Number(shiftTeamId) },
+      include: {
+        shiftSlots: {
+          where: {
+            dayType: slotDayType,
+            period,
+            isActive: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
     });
+
     if (!shiftTeam) {
       return NextResponse.json({ error: 'Equipe não encontrada' }, { status: 400 });
     }
 
-    // Verificar se é fim de semana ou feriado para usar os slots corretos
-    const isWeekendOrHoliday = isWeekend(zonedDate) || await isHoliday(zonedDate);
-    
-    // Definir os slots máximos baseado no tipo de dia e período
-    let maxSlots = 0;
-    if (isWeekendOrHoliday) {
-      // Usar slots de fim de semana/feriados
-      switch (period) {
-        case 'MORNING':
-          maxSlots = shiftTeam.weekendMorningSlots;
-          break;
-        case 'INTERMEDIATE':
-          maxSlots = shiftTeam.weekendIntermediateSlots;
-          break;
-        case 'AFTERNOON':
-          maxSlots = shiftTeam.weekendAfternoonSlots;
-          break;
-        case 'NIGHT':
-          maxSlots = shiftTeam.weekendNightSlots;
-          break;
-      }
-    } else {
-      // Usar slots de dias úteis
-      switch (period) {
-        case 'MORNING':
-          maxSlots = shiftTeam.weekdayMorningSlots;
-          break;
-        case 'INTERMEDIATE':
-          maxSlots = shiftTeam.weekdayIntermediateSlots;
-          break;
-        case 'AFTERNOON':
-          maxSlots = shiftTeam.weekdayAfternoonSlots;
-          break;
-        case 'NIGHT':
-          maxSlots = shiftTeam.weekdayNightSlots;
-          break;
-      }
+    if (shiftTeam.shiftSlots.length === 0) {
+      return NextResponse.json({ error: 'Não há vagas configuradas para este período na equipe.' }, { status: 400 });
     }
 
-    // Verificar se ainda há slots disponíveis para este período na data
-    const existingShiftsCount = await prisma.shift.count({
+    const occupiedSlotIds = await prisma.shift.findMany({
       where: {
         date: zonedDate,
-        period: period,
-        shiftTeamId: Number(shiftTeamId)
-      }
+        period,
+        shiftTeamId: Number(shiftTeamId),
+      },
+      select: {
+        shiftTeamSlotId: true,
+      },
     });
 
-    if (existingShiftsCount >= maxSlots) {
-      const dayType = isWeekendOrHoliday ? 'fins de semana/feriados' : 'dias úteis';
-      return NextResponse.json({ 
-        error: `Não há mais vagas disponíveis para o período ${period.toLowerCase()} nesta data. Limite para ${dayType}: ${maxSlots} plantão(ões)` 
-      }, { status: 400 });
+    const occupiedSet = new Set(occupiedSlotIds.map((shift) => shift.shiftTeamSlotId));
+    let targetSlotId = shiftTeamSlotId ? Number(shiftTeamSlotId) : undefined;
+
+    if (targetSlotId) {
+      const slot = shiftTeam.shiftSlots.find((item) => item.id === targetSlotId);
+      if (!slot) {
+        return NextResponse.json({ error: 'A vaga selecionada não pertence a este período/equipe.' }, { status: 400 });
+      }
+
+      if (occupiedSet.has(targetSlotId)) {
+        return NextResponse.json({ error: 'Esta vaga já está ocupada na data selecionada.' }, { status: 409 });
+      }
+    } else {
+      const firstAvailableSlot = shiftTeam.shiftSlots.find((slot) => !occupiedSet.has(slot.id));
+      if (!firstAvailableSlot) {
+        return NextResponse.json({ error: 'Não há mais vagas disponíveis para este período nesta data.' }, { status: 400 });
+      }
+      targetSlotId = firstAvailableSlot.id;
     }
 
-    // Validar se usuário USER só pode criar plantões nas suas próprias equipes
-    if (currentUser.role === 'USER' && currentUser.physiotherapistId) {
-      const userPhysio = await prisma.physiotherapist.findUnique({
-        where: { id: currentUser.physiotherapistId },
-        include: { teams: true }
-      });
-      
-      if (!userPhysio) {
-        return NextResponse.json({ error: 'Fisioterapeuta do usuário não encontrado' }, { status: 403 });
-      }
-      
-      const userBelongsToTeam = userPhysio.teams.some(team => team.shiftTeamId === Number(shiftTeamId));
-      if (!userBelongsToTeam) {
-        return NextResponse.json({ error: 'Você só pode criar plantões nas suas próprias equipes' }, { status: 403 });
-      }
-    }
-
-    // Checagem de duplicidade: mesma data e período para o mesmo fisioterapeuta
     const duplicate = await prisma.shift.findFirst({
       where: {
         physiotherapistId: Number(physiotherapistId),
         date: zonedDate,
-        period: period,
+        period,
       },
       select: { id: true },
     });
+
     if (duplicate) {
-      return NextResponse.json({ error: 'Já existe um plantão para este fisioterapeuta nesta data e período.' }, { status: 409 });
+      return NextResponse.json(
+        { error: 'Já existe um plantão para este fisioterapeuta nesta data e período.' },
+        { status: 409 }
+      );
     }
 
     const shift = await prisma.shift.create({
@@ -201,16 +180,17 @@ export async function POST(request: Request) {
         period,
         physiotherapist: { connect: { id: Number(physiotherapistId) } },
         shiftTeam: { connect: { id: Number(shiftTeamId) } },
+        shiftTeamSlot: { connect: { id: targetSlotId } },
       },
     });
 
-    sendInstantNotification(shift.id).catch((error) => {
-      console.error('Erro ao enviar notificação instantânea:', error);
+    sendInstantNotification(shift.id).catch((notificationError) => {
+      console.error('Erro ao enviar notificação instantânea:', notificationError);
     });
 
     return NextResponse.json({ message: 'Plantão criado com sucesso', shift }, { status: 201 });
-  } catch (error: any) {
-    console.error("Erro ao criar plantão:", error);
+  } catch (error) {
+    console.error('Erro ao criar plantão:', error);
     return NextResponse.json({ error: 'Erro ao criar plantão' }, { status: 500 });
   }
 }

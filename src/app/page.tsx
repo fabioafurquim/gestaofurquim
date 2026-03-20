@@ -12,6 +12,7 @@ interface DashboardStats {
   totalTeams: number;
   shiftsThisMonth: number;
   shiftsToday: number;
+  pendingApprovalSwapRequests: number;
 }
 
 interface RecentShift {
@@ -86,7 +87,7 @@ export default function DashboardPage() {
   return (
     <AuthLayout title="Painel">
       <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-xl border bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -146,7 +147,37 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+
+          <div className="rounded-xl border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-500">Trocas Pendentes</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{stats?.pendingApprovalSwapRequests || 0}</p>
+                <p className="mt-1 text-xs text-amber-600">aguardando aprovação da gestão</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100">
+                <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {(stats?.pendingApprovalSwapRequests || 0) > 0 && (
+          <Link
+            href="/swap-board?filter=pending-approval"
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-900 transition-colors hover:bg-amber-100"
+          >
+            <div>
+              <p className="text-sm font-semibold">Existem trocas aguardando aprovação</p>
+              <p className="text-sm text-amber-800">
+                {stats?.pendingApprovalSwapRequests} solicitação(ões) precisam de análise da gestão.
+              </p>
+            </div>
+            <span className="text-sm font-semibold">Abrir mural →</span>
+          </Link>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="rounded-xl border bg-white p-6 shadow-sm">

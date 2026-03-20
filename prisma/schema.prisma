@@ -69,8 +69,26 @@ model ShiftTeam {
   createdAt                 DateTime                @default(now())
   updatedAt                 DateTime                @updatedAt
   physiotherapists          PhysiotherapistTeam[]   // Relação many-to-many com fisioterapeutas
+  shiftSlots                ShiftTeamSlot[]
   shifts                    Shift[]
   priceHistory              ShiftTeamPriceHistory[] // Histórico de alterações de valor
+}
+
+model ShiftTeamSlot {
+  id          Int              @id @default(autoincrement())
+  shiftTeamId Int
+  period      ShiftPeriod
+  dayType     ShiftSlotDayType
+  description String
+  sortOrder   Int
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  shiftTeam   ShiftTeam        @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
+  shifts      Shift[]
+
+  @@unique([shiftTeamId, period, dayType, sortOrder])
+  @@index([shiftTeamId, dayType, period, isActive, sortOrder])
 }
 
 model Shift {
@@ -79,14 +97,17 @@ model Shift {
   period            ShiftPeriod
   physiotherapistId Int
   shiftTeamId       Int
+  shiftTeamSlotId   Int
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   physiotherapist   Physiotherapist @relation(fields: [physiotherapistId], references: [id])
   shiftTeam         ShiftTeam       @relation(fields: [shiftTeamId], references: [id])
+  shiftTeamSlot     ShiftTeamSlot   @relation(fields: [shiftTeamSlotId], references: [id])
   swapRequests      ShiftSwapRequest[] // Solicitações de troca para este plantão
   notificationLogs  NotificationLog[]  @relation("ShiftNotifications")
 
   @@unique([date, period, physiotherapistId])
+  @@unique([date, shiftTeamSlotId])
 }
 
 // ==========================================
@@ -288,6 +309,11 @@ enum ShiftPeriod {
   INTERMEDIATE
   AFTERNOON
   NIGHT
+}
+
+enum ShiftSlotDayType {
+  WEEKDAY
+  WEEKEND
 }
 
 enum SwapStatus {

@@ -110,6 +110,12 @@ function SwapBoardContent() {
 
   useEffect(() => {
     const shiftIdParam = searchParams.get('shiftId');
+    const filterParam = searchParams.get('filter');
+
+    if (filterParam === 'pending-approval') {
+      setFilter('pending-approval');
+    }
+
     if (shiftIdParam) {
       const shiftId = parseInt(shiftIdParam, 10);
       if (!isNaN(shiftId)) {
@@ -117,6 +123,40 @@ function SwapBoardContent() {
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!selectedShiftId || myShifts.length === 0) {
+      return;
+    }
+
+    void fetchTeamPhysiosForShift(selectedShiftId);
+  }, [selectedShiftId, myShifts]);
+
+  const fetchTeamPhysiosForShift = async (shiftId: number) => {
+    const selectedShift = myShifts.find((shift) => shift.id === shiftId);
+    if (!selectedShift) {
+      setTeamPhysios([]);
+      return;
+    }
+
+    try {
+      setLoadingPhysios(true);
+      setError('');
+      const response = await fetch(`/api/teams/${selectedShift.shiftTeam.id}/physiotherapists`);
+
+      if (!response.ok) {
+        throw new Error('Erro ao carregar fisioterapeutas');
+      }
+
+      const data = await response.json();
+      setTeamPhysios(data);
+    } catch (err) {
+      console.error('Erro ao carregar fisioterapeutas:', err);
+      setError('Erro ao carregar fisioterapeutas da equipe');
+    } finally {
+      setLoadingPhysios(false);
+    }
+  };
 
   const fetchMyShifts = async () => {
     try {
@@ -144,25 +184,7 @@ function SwapBoardContent() {
 
     if (!shiftId) return;
 
-    const selectedShift = myShifts.find(s => s.id === shiftId);
-    if (!selectedShift) return;
-
-    try {
-      setLoadingPhysios(true);
-      const response = await fetch(`/api/teams/${selectedShift.shiftTeam.id}/physiotherapists`);
-      
-      if (!response.ok) {
-        throw new Error('Erro ao carregar fisioterapeutas');
-      }
-
-      const data = await response.json();
-      setTeamPhysios(data);
-    } catch (err) {
-      console.error('Erro ao carregar fisioterapeutas:', err);
-      setError('Erro ao carregar fisioterapeutas da equipe');
-    } finally {
-      setLoadingPhysios(false);
-    }
+    await fetchTeamPhysiosForShift(shiftId);
   };
 
   const fetchSwapRequests = async () => {
@@ -245,7 +267,7 @@ function SwapBoardContent() {
         throw new Error(data.error || 'Erro ao aceitar troca');
       }
 
-      setSuccessMessage('Troca aceita com sucesso!');
+      setSuccessMessage('Troca aceita com sucesso! Aguarde a aprovação pela gestão.');
       fetchSwapRequests();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao aceitar troca');
@@ -401,7 +423,7 @@ function SwapBoardContent() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Deixe em branco para que qualquer fisioterapeuta da equipe possa aceitar
+                  Selecione um nome para direcionar a troca ou deixe em branco para abrir para toda a equipe
                 </p>
               </div>
             )}
