@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { gerarCnabPix, CompanyData, Payment } from '@/lib/cnab-generator';
+import {
+  buildMonthlyShiftPaymentEntries,
+  groupMonthlyShiftPaymentEntries,
+} from '@/lib/payment-calculator';
 
 /**
  * Dados da empresa FURQUIM FISIOTERAPIA LTDA
@@ -168,106 +172,47 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Formato de mês inválido. Use YYYY-MM' }, { status: 400 });
     }
 
-    const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1);
-    const endDate = new Date(year, monthNum, 0, 23, 59, 59);
+    const entries = await buildMonthlyShiftPaymentEntries(month);
+    const summaries = groupMonthlyShiftPaymentEntries(entries);
+    const summaryByPhysioId = new Map(
+      summaries.map((summary) => [summary.physiotherapistId, summary] as const)
+    );
 
-    // Buscar todos os plantões do mês com dados dos fisioterapeutas
-    const shifts = await prisma.shift.findMany({
+    const physiotherapists = await prisma.physiotherapist.findMany({
       where: {
-        date: {
-          gte: startDate,
-          lte: endDate,
-        },
+        status: 'ACTIVE',
       },
-      include: {
-        physiotherapist: {
-          select: {
-            id: true,
-            name: true,
-            cpf: true,
-            contractType: true,
-            hourValue: true,
-            additionalValue: true,
-            tipoPix: true,
-            chavePix: true,
-            cnpjEmpresa: true,
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        cpf: true,
+        contractType: true,
+        additionalValue: true,
+        tipoPix: true,
+        chavePix: true,
+        cnpjEmpresa: true,
       },
     });
 
-    if (shifts.length === 0) {
-      return NextResponse.json({ error: 'Nenhum plantão encontrado para o mês especificado' }, { status: 404 });
-    }
-
-    // Agrupar plantões por fisioterapeuta e calcular valores
-    const paymentsByPhysio = new Map<string, {
-      physiotherapist: any;
-      totalShifts: number;
-      totalShiftValue: number;
-      additionalValue: number;
-      totalValue: number;
-      rpaDiscount: number;
-      shifts: any[];
-    }>();
-
-    for (const shift of shifts) {
-      if (!shift.physiotherapist) continue;
-
-      const physioId = shift.physiotherapist.id.toString();
-      const hourValue = Number(shift.physiotherapist.hourValue) || 0;
-      const additionalValue = Number(shift.physiotherapist.additionalValue) || 0;
-      
-      if (!paymentsByPhysio.has(physioId)) {
-        paymentsByPhysio.set(physioId, {
-          physiotherapist: shift.physiotherapist,
-          totalShifts: 0,
-          totalShiftValue: 0,
-          additionalValue: additionalValue,
-          totalValue: 0,
-          rpaDiscount: 0,
-          shifts: []
-        });
-      }
-
-      const payment = paymentsByPhysio.get(physioId)!;
-      payment.totalShifts += 1;
-      payment.shifts.push(shift);
-    }
-
-    // Calcular valores usando a mesma lógica da interface (shiftsCount * hourValue)
-    for (const [physioId, payment] of paymentsByPhysio) {
-      const hourValue = Number(payment.physiotherapist.hourValue) || 0;
-      payment.totalShiftValue = payment.totalShifts * hourValue;
-    }
-
-    // Calcular valores finais e preparar dados para CNAB
     const pagamentos: Payment[] = [];
-    
-    for (const [physioId, payment] of paymentsByPhysio) {
-      const { physiotherapist } = payment;
-      
-      // Calcular desconto RPA (zerado por padrão, como na interface)
-      if (physiotherapist.contractType === 'RPA') {
-        payment.rpaDiscount = 0; // Zerado por padrão, editável pelo usuário na interface
-      }
-      
-      // Calcular valor total
-      payment.totalValue = payment.totalShiftValue + payment.additionalValue - payment.rpaDiscount;
-      
-      // Só incluir no CNAB se o valor total for maior que zero
-      if (payment.totalValue > 0) {
+
+    for (const physiotherapist of physiotherapists) {
+      const summary = summaryByPhysioId.get(physiotherapist.id);
+      const totalShiftValue = summary?.totalShiftValue ?? 0;
+      const additionalValue = Number(physiotherapist.additionalValue) || 0;
+      const totalValue = totalShiftValue + additionalValue;
+
+      if (totalValue > 0) {
         const chavePix = obterChavePix(physiotherapist);
-        
+
         pagamentos.push({
           nome: physiotherapist.name,
-          cpf_cnpj: physiotherapist.contractType === 'PJ' && physiotherapist.cnpjEmpresa 
-            ? physiotherapist.cnpjEmpresa 
+          cpf_cnpj: physiotherapist.contractType === 'PJ' && physiotherapist.cnpjEmpresa
+            ? physiotherapist.cnpjEmpresa
             : physiotherapist.cpf,
           tipo_chave_pix: chavePix.tipo,
           chave_pix: chavePix.chave,
-          valor: payment.totalValue
+          valor: totalValue,
         });
       }
     }

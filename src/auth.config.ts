@@ -19,24 +19,8 @@ export const authConfig = {
     signIn: '/login',
   },
   callbacks: {
-    authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user;
-      const isOnDashboard = nextUrl.pathname.startsWith('/');
-      const isOnLogin = nextUrl.pathname.startsWith('/login');
-      const isOnSetup = nextUrl.pathname.startsWith('/setup');
-      const isOnChangePassword = nextUrl.pathname.startsWith('/change-password');
-      
-      // Permitir acesso à página de troca de senha se estiver logado
-      if (isOnChangePassword && isLoggedIn) {
-        return true;
-      }
-      
-      if (isOnDashboard && !isOnLogin && !isOnSetup && !isOnChangePassword) {
-        if (isLoggedIn) return true;
-        return false;
-      } else if (isLoggedIn && (isOnLogin || isOnSetup)) {
-        return Response.redirect(new URL('/', nextUrl));
-      }
+    authorized() {
+      // A autorização de acesso é controlada pelo middleware customizado.
       return true;
     },
     async jwt({ token, user }) {
@@ -70,9 +54,9 @@ export const authConfig = {
     Credentials({
       async authorize(credentials, request) {
         const { email, password } = credentials as { email: string; password: string };
-        
+
         const user = await authenticateUser(email, password);
-        
+
         if (!user) {
           return null;
         }
@@ -89,7 +73,7 @@ export const authConfig = {
         }).catch((error) => {
           console.error('Erro ao registrar log de acesso:', error);
         });
-        
+
         return {
           id: user.id.toString(),
           email: user.email,

@@ -1,105 +1,110 @@
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { verifyToken, needsInitialSetup } from './src/lib/auth';
+import type { NextAuthRequest } from 'next-auth';
+import { auth } from './src/auth';
+import { needsInitialSetup } from './src/lib/auth';
 
-// Rotas que não precisam de autenticação
-const publicRoutes = ['/login', '/setup'];
+// Rotas públicas da aplicação
+const publicPageRoutes = ['/login', '/setup'];
 
-// Rotas que só admins podem acessar
+// Rotas exclusivas de administradores
 const adminOnlyRoutes = [
-  '/physiotherapists',
-  '/teams',
   '/reports',
-  '/staff'
+  '/users',
+  '/contracts',
+  '/payments',
+  '/payment-control',
+  '/settings',
+  '/maintenance',
+  '/admin',
 ];
 
-// Rotas da API que não precisam de autenticação
-const publicApiRoutes = ['/api/auth/login', '/api/auth/setup', '/api/auth/check-setup'];
+// Rotas disponíveis para administradores e gestores
+const managerAllowedRoutes = [
+  '/physiotherapists',
+  '/teams',
+  '/holidays',
+  '/shift-deletion-history',
+];
 
-export async function middleware(request: NextRequest) {
+function isPublicPage(pathname: string) {
+  return publicPageRoutes.includes(pathname);
+}
+
+function isAdminOnlyRoute(pathname: string) {
+  return adminOnlyRoutes.some(route => pathname.startsWith(route));
+}
+
+function isManagerAllowedRoute(pathname: string) {
+  return managerAllowedRoutes.some(route => pathname.startsWith(route));
+}
+
+function isPublicAuthRoute(pathname: string) {
+  return pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+}
+
+export default auth(async function middleware(request: NextAuthRequest) {
   const { pathname } = request.nextUrl;
-  
-  // Permite acesso a arquivos estáticos e API routes públicas
+  const sessionUser = request.auth?.user;
+
+  // Mantém os endpoints internos do NextAuth e nossas rotas de auth fora do bloqueio do middleware
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon.ico') ||
     pathname.startsWith('/public') ||
-    publicApiRoutes.some(route => pathname.startsWith(route))
+    isPublicAuthRoute(pathname)
   ) {
     return NextResponse.next();
   }
 
-  // Obtém o token de autenticação
-  const token = request.cookies.get('auth-token')?.value;
-  const user = token ? verifyToken(token) : null;
-
-  // Se não há usuário logado e não é uma rota pública
-  if (!user && !publicRoutes.includes(pathname)) {
-    // Verifica se precisa de setup inicial
+  // Se não há sessão e não é rota pública, decide entre setup e login
+  if (!sessionUser && !isPublicPage(pathname)) {
     const needsSetup = await needsInitialSetup();
-    
+
     if (needsSetup) {
-      // Redireciona para setup se não há admins no sistema
       return NextResponse.redirect(new URL('/setup', request.url));
-    } else {
-      // Redireciona para login se já há admins no sistema
-      return NextResponse.redirect(new URL('/login', request.url));
     }
+
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Se há usuário logado e está tentando acessar login ou setup
-  if (user && (pathname === '/login' || pathname === '/setup')) {
+  // Usuário autenticado não deve voltar para login ou setup
+  if (sessionUser && isPublicPage(pathname)) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  // Verifica se o usuário precisa trocar a senha
-  if (user && user.mustChangePassword && pathname !== '/change-password') {
+  // Força troca de senha quando necessário
+  if (sessionUser && sessionUser.mustChangePassword && pathname !== '/change-password') {
     return NextResponse.redirect(new URL('/change-password', request.url));
   }
 
-  // Verifica acesso a rotas administrativas
-  if (adminOnlyRoutes.some(route => pathname.startsWith(route))) {
-    if (!user || user.role !== 'ADMIN') {
+  // Controle de acesso para rotas administrativas
+  if (isAdminOnlyRoute(pathname)) {
+    if (!sessionUser || sessionUser.role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/unauthorized', request.url));
     }
   }
 
-  // Verifica rotas da API que precisam de autenticação
-  if (pathname.startsWith('/api/') && !publicApiRoutes.some(route => pathname.startsWith(route))) {
-    if (!user) {
+  if (isManagerAllowedRoute(pathname)) {
+    if (!sessionUser || (sessionUser.role !== 'ADMIN' && sessionUser.role !== 'MANAGER')) {
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
+    }
+  }
+
+  // Protege as demais rotas de API
+  if (pathname.startsWith('/api/')) {
+    if (!sessionUser) {
       return NextResponse.json(
-        { error: 'Token de autenticação necessário' },
+        { error: 'Autenticação necessária' },
         { status: 401 }
       );
     }
-
-    // Adiciona informações do usuário aos headers para as API routes
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-user-id', user.id.toString());
-    requestHeaders.set('x-user-role', user.role);
-    requestHeaders.set('x-user-email', user.email);
-    if (user.physiotherapistId) {
-      requestHeaders.set('x-physiotherapist-id', user.physiotherapistId.toString());
-    }
-
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };

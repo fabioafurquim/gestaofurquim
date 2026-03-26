@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import AuthLayout from '@/components/AuthLayout';
+import TeamPriceHistoryManager from '@/components/TeamPriceHistoryManager';
 import TeamSlotsForm from '@/components/TeamSlotsForm';
 import {
   buildTeamSlotPayloadFromSlots,
@@ -148,6 +149,9 @@ export default function EditTeamPage({ params }: { params: Promise<{ id: string 
             onChange={handleShiftValueChange}
             placeholder="0,00"
           />
+          <small className="text-muted">
+            Alterações por este campo valem imediatamente. Para agendar valores futuros ou corrigir vigências antigas, use o gerenciador de histórico abaixo.
+          </small>
         </div>
 
         <TeamSlotsForm value={slots} onChange={setSlots} />
@@ -159,6 +163,8 @@ export default function EditTeamPage({ params }: { params: Promise<{ id: string 
           </button>
         </div>
       </form>
+
+      <TeamPriceHistoryManager teamId={Number(id)} />
     </AuthLayout>
   );
 }

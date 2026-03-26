@@ -1,6 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-helpers';
+import {
+  normalizePhysiotherapistTeamAssignments,
+  syncPhysiotherapistTeamsByDiff,
+  PhysiotherapistTeamSyncError,
+} from '@/lib/physiotherapist-team-sync';
 import { countFutureShifts } from '@/lib/validations';
 
 export async function GET(
@@ -9,11 +14,15 @@ export async function GET(
 ) {
   const { id: idStr } = await context.params;
   const id = parseInt(idStr, 10);
+  if (Number.isNaN(id)) {
+    return NextResponse.json({ error: 'ID inválido.' }, { status: 400 });
+  }
   try {
     const physiotherapist = await prisma.physiotherapist.findUnique({
       where: { id },
       include: {
         teams: {
+          where: { isActive: true },
           include: {
             shiftTeam: true
           }
@@ -33,11 +42,14 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { error } = await requireAuth();
+  const { error, user: currentUser } = await requireAuth();
   if (error) return error;
 
   const { id: idStr } = await context.params;
   const id = parseInt(idStr, 10);
+  if (Number.isNaN(id)) {
+    return NextResponse.json({ error: 'ID inválido.' }, { status: 400 });
+  }
   const body = await request.json();
 
   const {
@@ -72,6 +84,9 @@ export async function PUT(
     telegramUsername,
   } = body;
 
+  const parsedCurrentUserId = typeof currentUser.id === 'string' ? parseInt(currentUser.id, 10) : currentUser.id;
+  const createdByUserId = Number.isFinite(parsedCurrentUserId) ? parsedCurrentUserId : null;
+
   const updateData: any = {
     ...(name !== undefined ? { name } : {}),
     ...(email !== undefined ? { email } : {}),
@@ -104,6 +119,8 @@ export async function PUT(
   };
 
   try {
+    const teamAssignments = teamIds !== undefined ? normalizePhysiotherapistTeamAssignments(teamIds) : undefined;
+
     // Verifica se o fisioterapeuta existe
     const existing = await prisma.physiotherapist.findUnique({
       where: { id },
@@ -151,48 +168,43 @@ export async function PUT(
       }
     }
 
-    // Atualizar os dados básicos do fisioterapeuta
-    const updatedPhysiotherapist = await prisma.physiotherapist.update({
-      where: { id },
-      data: updateData,
-    });
-
-    // Se teamIds foi fornecido, atualizar as relações com equipes
-    if (teamIds !== undefined && Array.isArray(teamIds)) {
-      await prisma.physiotherapistTeam.deleteMany({
-        where: { physiotherapistId: id }
+    const updatedPhysiotherapist = await prisma.$transaction(async (tx) => {
+      const updated = await tx.physiotherapist.update({
+        where: { id },
+        data: updateData,
       });
 
-      if (teamIds.length > 0) {
-        const teamsData = teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
-          if (typeof team === 'number') {
-            return {
-              physiotherapistId: id,
-              shiftTeamId: team
-            };
-          }
-          const teamData: any = {
-            physiotherapistId: id,
-            shiftTeamId: team.teamId
-          };
-          if (team.customShiftValue !== undefined && team.customShiftValue !== null) {
-            try {
-              teamData.customShiftValue = Number(team.customShiftValue);
-            } catch (e) {
-              // Ignorar se customShiftValue não estiver disponível no schema
-            }
-          }
-          return teamData;
-        });
-        
-        await prisma.physiotherapistTeam.createMany({
-          data: teamsData
-        });
+      if (teamAssignments) {
+        await syncPhysiotherapistTeamsByDiff(tx, id, teamAssignments, createdByUserId);
       }
+
+      return tx.physiotherapist.findUnique({
+        where: { id: updated.id },
+        include: {
+          teams: {
+            where: { isActive: true },
+            include: {
+              shiftTeam: true,
+            },
+          },
+        },
+      });
+    });
+
+    if (!updatedPhysiotherapist) {
+      return NextResponse.json({ error: 'Fisioterapeuta não encontrado.' }, { status: 404 });
     }
+
     return NextResponse.json(updatedPhysiotherapist);
   } catch (error: any) {
     console.error('Erro ao atualizar fisioterapeuta:', error);
+
+    if (error instanceof PhysiotherapistTeamSyncError) {
+      return NextResponse.json({
+        error: error.message,
+        details: error.details,
+      }, { status: error.statusCode });
+    }
     
     // Tratamento específico de erros do Prisma
     if (error.code === 'P2002') {
@@ -235,12 +247,10 @@ export async function DELETE(
 
   const { id: idStr } = await context.params;
   const id = parseInt(idStr, 10);
+  if (Number.isNaN(id)) {
+    return NextResponse.json({ error: 'ID inválido.' }, { status: 400 });
+  }
   try {
-    
-    if (isNaN(id)) {
-      return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-    }
-
     // Verificar se o fisioterapeuta existe
     const existingPhysiotherapist = await prisma.physiotherapist.findUnique({
       where: { id },

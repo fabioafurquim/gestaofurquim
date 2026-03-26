@@ -153,6 +153,8 @@ model User {
   swapApprovals                   ShiftSwapRequest[]                   @relation("SwapApprover")
   teamPriceChanges                ShiftTeamPriceHistory[]              @relation("PriceChangeUser")
   physiotherapistTeamPriceChanges PhysiotherapistTeamPriceHistory[]    @relation("CustomPriceChangeUser")
+  updatedTeamPriceChanges         ShiftTeamPriceHistory[]              @relation("PriceUpdateUser")
+  updatedPhysiotherapistTeamPriceChanges PhysiotherapistTeamPriceHistory[] @relation("CustomPriceUpdateUser")
   accessLogs                      UserAccessLog[]
 }
 
@@ -162,6 +164,7 @@ model PhysiotherapistTeam {
   physiotherapistId Int
   shiftTeamId       Int
   customShiftValue  Decimal?                             @db.Decimal(10, 2) // Valor customizado do plantão para este fisioterapeuta nesta equipe
+  isActive          Boolean                              @default(true)
   physiotherapist   Physiotherapist                      @relation(fields: [physiotherapistId], references: [id], onDelete: Cascade)
   shiftTeam         ShiftTeam                            @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
   createdAt         DateTime                             @default(now())
@@ -169,6 +172,8 @@ model PhysiotherapistTeam {
   priceHistory      PhysiotherapistTeamPriceHistory[]    // Histórico de alterações de valor customizado
 
   @@unique([physiotherapistId, shiftTeamId])
+  @@index([physiotherapistId, isActive])
+  @@index([shiftTeamId, isActive])
 }
 
 model Holiday {
@@ -416,12 +421,16 @@ model ShiftTeamPriceHistory {
   id            Int       @id @default(autoincrement())
   shiftTeamId   Int
   shiftValue    Decimal   @db.Decimal(10, 2)
+  changeReason  String?
   effectiveFrom DateTime  @default(now()) // Data a partir da qual o valor é válido
   createdAt     DateTime  @default(now())
   createdBy     Int?      // Usuário que fez a alteração
+  updatedAt     DateTime  @updatedAt
+  updatedBy     Int?
   
   shiftTeam     ShiftTeam @relation(fields: [shiftTeamId], references: [id], onDelete: Cascade)
   user          User?     @relation("PriceChangeUser", fields: [createdBy], references: [id])
+  updatedByUser User?     @relation("PriceUpdateUser", fields: [updatedBy], references: [id])
   
   @@index([shiftTeamId, effectiveFrom])
 }
@@ -429,13 +438,17 @@ model ShiftTeamPriceHistory {
 model PhysiotherapistTeamPriceHistory {
   id                    Int                 @id @default(autoincrement())
   physiotherapistTeamId Int
-  customShiftValue      Decimal             @db.Decimal(10, 2)
+  customShiftValue      Decimal?            @db.Decimal(10, 2)
+  changeReason          String?
   effectiveFrom         DateTime            @default(now()) // Data a partir da qual o valor é válido
   createdAt             DateTime            @default(now())
   createdBy             Int?                // Usuário que fez a alteração
+  updatedAt             DateTime            @updatedAt
+  updatedBy             Int?
   
   physiotherapistTeam   PhysiotherapistTeam @relation(fields: [physiotherapistTeamId], references: [id], onDelete: Cascade)
   user                  User?               @relation("CustomPriceChangeUser", fields: [createdBy], references: [id])
+  updatedByUser         User?               @relation("CustomPriceUpdateUser", fields: [updatedBy], references: [id])
   
   @@index([physiotherapistTeamId, effectiveFrom])
 }

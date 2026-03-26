@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ShiftPeriod } from '@prisma/client';
+import {
+    buildMonthlyShiftPaymentEntries,
+    groupMonthlyShiftPaymentEntries,
+} from '@/lib/payment-calculator';
 
 const periodLabel: Record<ShiftPeriod, string> = {
     MORNING: 'Manhã',
@@ -16,108 +20,27 @@ export async function GET(request: NextRequest) {
         const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
         const teamId = searchParams.get('teamId') ? parseInt(searchParams.get('teamId')!) : undefined;
         const physioId = searchParams.get('physioId') ? parseInt(searchParams.get('physioId')!) : undefined;
-
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 1);
-
-        const shifts = await prisma.shift.findMany({
-            where: {
-                date: { gte: start, lt: end },
-                ...(teamId ? { shiftTeamId: teamId } : {}),
-                ...(physioId ? { physiotherapistId: physioId } : {}),
-            },
-            include: { physiotherapist: true, shiftTeam: true },
-            orderBy: { date: 'asc' },
+        const entries = await buildMonthlyShiftPaymentEntries(`${year}-${String(month).padStart(2, '0')}`, {
+            teamId,
+            physioId,
         });
+        const summaries = groupMonthlyShiftPaymentEntries(entries);
 
-        // Buscar todas as relações PhysiotherapistTeam para obter os valores customizados
-        // Usar try-catch para compatibilidade com bancos que ainda não têm customShiftValue
-        const customValueMap = new Map<string, number | null>();
-        try {
-            const physiotherapistTeams = await prisma.physiotherapistTeam.findMany();
-            for (const pt of physiotherapistTeams) {
-                const key = `${pt.physiotherapistId}-${pt.shiftTeamId}`;
-                // Usar any para evitar erro de tipo enquanto Prisma não é regenerado
-                const customValue = (pt as any).customShiftValue;
-                customValueMap.set(key, customValue ? Number(customValue) : null);
-            }
-        } catch (error) {
-            console.log('customShiftValue não disponível no banco, usando valores padrão das equipes');
-        }
-
-        // Agrupar dados por fisioterapeuta
-        const byPhysio: Record<number, {
-            id: number;
-            name: string;
-            teamBreakdown: Record<number, {
-                teamId: number;
-                teamName: string;
-                periods: Record<ShiftPeriod, number>;
-                shiftValue: number;
-                totalShifts: number;
-                totalValue: number;
-            }>;
-            totalShifts: number;
-            totalValue: number;
-            additionalValue: number;
-        }> = {};
-
-        for (const shift of shifts) {
-            const physio = shift.physiotherapist;
-            const team = shift.shiftTeam;
-            
-            if (!team || !physio) continue;
-
-            // Verificar se há valor customizado para este fisioterapeuta nesta equipe
-            const customValueKey = `${physio.id}-${team.id}`;
-            const customValue = customValueMap.get(customValueKey);
-            
-            // Usar valor customizado se existir, senão usar valor padrão da equipe
-            const shiftValue = customValue !== null && customValue !== undefined 
-                ? customValue 
-                : (team.shiftValue?.toNumber() || 0);
-            const additionalValue = physio.additionalValue?.toNumber() || 0;
-
-            if (!byPhysio[physio.id]) {
-                byPhysio[physio.id] = {
-                    id: physio.id,
-                    name: physio.name,
-                    teamBreakdown: {},
-                    totalShifts: 0,
-                    totalValue: 0,
-                    additionalValue: additionalValue
-                };
-            }
-
-            if (!byPhysio[physio.id].teamBreakdown[team.id]) {
-                byPhysio[physio.id].teamBreakdown[team.id] = {
-                    teamId: team.id,
-                    teamName: team.name,
-                    periods: {
-                        MORNING: 0,
-                        INTERMEDIATE: 0,
-                        AFTERNOON: 0,
-                        NIGHT: 0
-                    },
-                    shiftValue: shiftValue,
-                    totalShifts: 0,
-                    totalValue: 0
-                };
-            }
-
-            const teamBreakdown = byPhysio[physio.id].teamBreakdown[team.id];
-            teamBreakdown.periods[shift.period]++;
-            teamBreakdown.totalShifts++;
-            teamBreakdown.totalValue += shiftValue;
-
-            byPhysio[physio.id].totalShifts++;
-            byPhysio[physio.id].totalValue += shiftValue;
-        }
-
-        // Converter para array e calcular totais gerais
-        const data = Object.values(byPhysio).map(physioData => ({
-            ...physioData,
-            teamBreakdown: Object.values(physioData.teamBreakdown)
+        // Converter para o formato esperado pela UI
+        const data = summaries.map((summary) => ({
+            id: summary.physiotherapistId,
+            name: summary.physiotherapistName,
+            teamBreakdown: [...summary.teamBreakdown.values()].map((team) => ({
+                teamId: team.teamId,
+                teamName: team.teamName,
+                periods: team.periods,
+                shiftValue: team.totalShifts > 0 ? Number((team.totalValue / team.totalShifts).toFixed(2)) : 0,
+                totalShifts: team.totalShifts,
+                totalValue: team.totalValue,
+            })),
+            totalShifts: summary.totalShifts,
+            totalValue: summary.totalShiftValue,
+            additionalValue: summary.additionalValue,
         }));
         
         const totals = {

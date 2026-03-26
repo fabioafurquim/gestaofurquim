@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
   if (user?.role === 'USER' && user.physiotherapistId) {
     const userPhysio = await prisma.physiotherapist.findUnique({
       where: { id: Number(user.physiotherapistId) },
-      include: { teams: true },
+      include: { teams: { where: { isActive: true } } },
     });
 
     if (!userPhysio) {

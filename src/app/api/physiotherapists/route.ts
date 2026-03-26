@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
+import {
+  normalizePhysiotherapistTeamAssignments,
+  PhysiotherapistTeamSyncError,
+} from '@/lib/physiotherapist-team-sync';
 
 export async function GET() {
   try {
     const physiotherapists = await prisma.physiotherapist.findMany({
       include: { 
         teams: {
+          where: { isActive: true },
           include: {
             shiftTeam: true
           }
@@ -54,11 +59,18 @@ export async function POST(request: Request) {
       enderecoEmpresa,
     } = data;
 
+    const parsedCurrentUserId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+    const createdByUserId = Number.isFinite(parsedCurrentUserId) ? parsedCurrentUserId : null;
+
     if (!name || !email || !crefito || !cpf || !startDate || !contractType) {
       return NextResponse.json({
         error: 'Campos obrigatórios: name, email, crefito, cpf, startDate, contractType',
       }, { status: 400 });
     }
+
+    const teamAssignments = teamIds !== undefined
+      ? normalizePhysiotherapistTeamAssignments(teamIds)
+      : [];
 
     // Verifica se CPF já existe
     const existingCpf = await prisma.physiotherapist.findUnique({
@@ -90,51 +102,85 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const physiotherapist = await prisma.physiotherapist.create({
-      data: {
-        name,
-        email,
-        phone: phone ?? null,
-        crefito,
-        cpf,
-        rg: rg ?? null,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        address: address ?? null,
-        startDate: new Date(startDate),
-        exitDate: exitDate ? new Date(exitDate) : null,
-        contractType,
-        hourValue: hourValue !== undefined && hourValue !== null && `${hourValue}` !== '' ? Number(hourValue) : 0,
-        additionalValue: additionalValue !== undefined && additionalValue !== null && `${additionalValue}` !== '' ? Number(additionalValue) : 0,
-        status: status ?? 'ACTIVE',
-        banco: banco ?? null,
-        agencia: agencia ?? null,
-        conta: conta ?? null,
-        tipoPix: tipoPix ?? null,
-        chavePix: chavePix ?? null,
-        nomeEmpresa: contractType === 'PJ' ? nomeEmpresa : null,
-        cnpjEmpresa: contractType === 'PJ' ? cnpjEmpresa : null,
-        enderecoEmpresa: contractType === 'PJ' ? enderecoEmpresa : null,
-        teams: teamIds && teamIds.length > 0 ? {
-          create: teamIds.map((team: number | { teamId: number; customShiftValue?: number | null }) => {
-            if (typeof team === 'number') {
-              return { shiftTeamId: team };
-            }
-            const teamData: any = { shiftTeamId: team.teamId };
-            if (team.customShiftValue !== undefined && team.customShiftValue !== null) {
-              try {
-                teamData.customShiftValue = Number(team.customShiftValue);
-              } catch (e) {
-                // Ignorar se customShiftValue não estiver disponível no schema
-              }
-            }
-            return teamData;
-          })
-        } : undefined,
-      },
+    const physiotherapist = await prisma.$transaction(async (tx) => {
+      const createdPhysiotherapist = await tx.physiotherapist.create({
+        data: {
+          name,
+          email,
+          phone: phone ?? null,
+          crefito,
+          cpf,
+          rg: rg ?? null,
+          birthDate: birthDate ? new Date(birthDate) : null,
+          address: address ?? null,
+          startDate: new Date(startDate),
+          exitDate: exitDate ? new Date(exitDate) : null,
+          contractType,
+          hourValue: hourValue !== undefined && hourValue !== null && `${hourValue}` !== '' ? Number(hourValue) : 0,
+          additionalValue: additionalValue !== undefined && additionalValue !== null && `${additionalValue}` !== '' ? Number(additionalValue) : 0,
+          status: status ?? 'ACTIVE',
+          banco: banco ?? null,
+          agencia: agencia ?? null,
+          conta: conta ?? null,
+          tipoPix: tipoPix ?? null,
+          chavePix: chavePix ?? null,
+          nomeEmpresa: contractType === 'PJ' ? nomeEmpresa : null,
+          cnpjEmpresa: contractType === 'PJ' ? cnpjEmpresa : null,
+          enderecoEmpresa: contractType === 'PJ' ? enderecoEmpresa : null,
+        },
+      });
+
+      for (const assignment of teamAssignments) {
+        const createdTeam = await tx.physiotherapistTeam.create({
+          data: {
+            physiotherapistId: createdPhysiotherapist.id,
+            shiftTeamId: assignment.teamId,
+            ...(assignment.customShiftValueProvided
+              ? { customShiftValue: assignment.customShiftValue }
+              : {}),
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (assignment.customShiftValueProvided) {
+          await tx.physiotherapistTeamPriceHistory.create({
+            data: {
+              physiotherapistTeamId: createdTeam.id,
+              customShiftValue: assignment.customShiftValue,
+              createdBy: createdByUserId ?? null,
+              updatedBy: createdByUserId ?? null,
+              effectiveFrom: new Date(),
+              changeReason: 'Valor customizado inicial do vínculo',
+            },
+          });
+        }
+      }
+
+      return tx.physiotherapist.findUnique({
+        where: { id: createdPhysiotherapist.id },
+        include: {
+          teams: {
+            where: { isActive: true },
+            include: {
+              shiftTeam: true,
+            },
+          },
+        },
+      });
     });
+
     return NextResponse.json(physiotherapist, { status: 201 });
   } catch (error: any) {
     console.error('Erro na API de fisioterapeutas:', error);
+
+    if (error instanceof PhysiotherapistTeamSyncError) {
+      return NextResponse.json({
+        error: error.message,
+        details: error.details,
+      }, { status: error.statusCode });
+    }
     
     // Tratamento específico de erros do Prisma
     if (error.code === 'P2002') {

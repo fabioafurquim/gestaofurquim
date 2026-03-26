@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { execSync } from 'child_process';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, generateToken, needsInitialSetup } from '@/lib/auth';
-import { cookies } from 'next/headers';
+import { signIn } from '@/auth';
+import { hashPassword, needsInitialSetup } from '@/lib/auth';
 
 const setupSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -104,25 +104,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Gera o token de autenticação
-    const token = generateToken({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      physiotherapistId: user.physiotherapistId,
-      isFirstLogin: user.isFirstLogin,
-      mustChangePassword: user.mustChangePassword,
-    });
-
-    // Define o cookie de autenticação
-    const cookieStore = await cookies();
-    cookieStore.set('auth-token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
-    });
+    try {
+      // Cria a sessão do NextAuth para o administrador recém-criado
+      await signIn('credentials', {
+        email: validatedData.email,
+        password: validatedData.password,
+        redirect: false,
+        redirectTo: '/',
+      });
+    } catch (signInError) {
+      console.error('Falha ao autenticar automaticamente o administrador:', signInError);
+    }
 
     return NextResponse.json({
       message: 'Administrador criado com sucesso',

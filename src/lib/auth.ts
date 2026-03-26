@@ -1,10 +1,7 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { cookies } from 'next/headers';
 import { prisma } from './prisma';
 import { UserRole } from '@prisma/client';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const SALT_ROUNDS = 12;
 
 export interface AuthUser {
@@ -29,90 +26,6 @@ export async function hashPassword(password: string): Promise<string> {
  */
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
-}
-
-/**
- * Gera um JWT token para o usuário
- */
-export function generateToken(user: AuthUser): string {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      physiotherapistId: user.physiotherapistId,
-      isFirstLogin: user.isFirstLogin,
-      mustChangePassword: user.mustChangePassword,
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
-
-/**
- * Verifica e decodifica um JWT token
- */
-export function verifyToken(token: string): AuthUser | null {
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    return {
-      id: decoded.id,
-      email: decoded.email,
-      name: decoded.name,
-      role: decoded.role,
-      physiotherapistId: decoded.physiotherapistId,
-      isFirstLogin: decoded.isFirstLogin,
-      mustChangePassword: decoded.mustChangePassword,
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
-/**
- * Obtém o usuário atual a partir do cookie de autenticação
- */
-export async function getCurrentUser(headersList?: any): Promise<AuthUser | null> {
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('auth-token')?.value;
-    console.log('Cookie token:', token ? 'EXISTS' : 'NOT FOUND');
-    
-    if (!token) {
-      console.log('No auth token found in cookies');
-      return null;
-    }
-
-    const user = verifyToken(token);
-    console.log('Token verification:', user ? 'VALID' : 'INVALID');
-    if (!user) {
-      return null;
-    }
-
-    // Verifica se o usuário ainda existe no banco
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: { physiotherapist: true }
-    });
-
-    if (!dbUser) {
-      return null;
-    }
-
-    return {
-      id: dbUser.id,
-      email: dbUser.email,
-      name: dbUser.name,
-      role: dbUser.role,
-      physiotherapistId: dbUser.physiotherapistId,
-      isFirstLogin: dbUser.isFirstLogin,
-      mustChangePassword: dbUser.mustChangePassword,
-    };
-  } catch (error) {
-    console.error('Erro ao obter usuário atual:', error);
-    return null;
-  }
 }
 
 /**

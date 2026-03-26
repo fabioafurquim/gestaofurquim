@@ -28,7 +28,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireAuth();
+  const { error, user } = await requireAuth();
   if (error) return error;
 
   const data = await request.json();
@@ -53,6 +53,17 @@ export async function POST(request: Request) {
       });
 
       await createTeamSlots(tx, createdTeam.id, slotPayload);
+
+      await tx.shiftTeamPriceHistory.create({
+        data: {
+          shiftTeamId: createdTeam.id,
+          shiftValue,
+          effectiveFrom: new Date(),
+          createdBy: user ? (typeof user.id === 'string' ? parseInt(user.id, 10) : user.id) : null,
+          updatedBy: user ? (typeof user.id === 'string' ? parseInt(user.id, 10) : user.id) : null,
+          changeReason: 'Valor inicial da equipe',
+        },
+      });
 
       return tx.shiftTeam.findUniqueOrThrow({
         where: { id: createdTeam.id },

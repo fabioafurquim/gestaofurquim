@@ -56,7 +56,7 @@ export async function PUT(
 
     const physio = await prisma.physiotherapist.findUnique({
       where: { id: Number(physiotherapistId) },
-      include: { teams: true },
+      include: { teams: { where: { isActive: true } } },
     });
 
     if (!physio) {

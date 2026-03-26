@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Physiotherapist, ShiftTeam } from '@prisma/client';
 import AuthLayout from '@/components/AuthLayout';
+import PhysiotherapistTeamPriceHistoryManager from '@/components/PhysiotherapistTeamPriceHistoryManager';
 import { 
   applyPhoneMask, 
   applyCpfMask, 
@@ -484,6 +485,8 @@ export default function EditPhysiotherapistPage() {
         <button type="button" className="btn btn-secondary ms-2" onClick={() => router.back()}>Cancelar</button>
         <button type="button" className="btn btn-danger ms-2" onClick={handleDelete}>Excluir Fisioterapeuta</button>
       </form>
+
+      <PhysiotherapistTeamPriceHistoryManager physiotherapistId={Number(id)} />
       </div>
     </AuthLayout>
   );

@@ -68,6 +68,16 @@ const periodOrderMap: Record<ShiftPeriod, number> = {
   NIGHT: 4,
 };
 
+const recurrenceWeekdayOptions = [
+  { value: 1, label: 'Seg' },
+  { value: 2, label: 'Ter' },
+  { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' },
+  { value: 5, label: 'Sex' },
+  { value: 6, label: 'Sáb' },
+  { value: 0, label: 'Dom' },
+];
+
 export default function ShiftCalendar() {
   const { data: session } = useSession();
   const calendarRef = useRef<any>(null);
@@ -82,6 +92,9 @@ export default function ShiftCalendar() {
   const [selectedPeriod, setSelectedPeriod] = useState<ShiftPeriod>('MORNING');
   const [selectedPhysioId, setSelectedPhysioId] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
+  const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isMobileView, setIsMobileView] = useState(false);
@@ -93,6 +106,14 @@ export default function ShiftCalendar() {
 
   const currentUser = session?.user;
   const canManageShifts = !!currentUser && currentUser.role !== 'USER';
+
+  const extractApiError = (payload: unknown, fallbackMessage: string) => {
+    if (payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string') {
+      return payload.error;
+    }
+
+    return fallbackMessage;
+  };
 
   const canRequestSwapForShift = (physioId?: number) => {
     if (!currentUser || currentUser.role !== 'USER') return false;
@@ -162,6 +183,15 @@ export default function ShiftCalendar() {
     try {
       const response = await fetch(`/api/shifts?teamId=${teamId}`);
       const shifts = await response.json();
+
+      if (!response.ok) {
+        throw new Error(extractApiError(shifts, 'Erro ao carregar plantões.'));
+      }
+
+      if (!Array.isArray(shifts)) {
+        throw new Error(extractApiError(shifts, 'Resposta inválida ao carregar plantões.'));
+      }
+
       const formattedEvents = shifts.map((shift: any) => {
         // Normalizar a data para formato YYYY-MM-DD para evitar problemas de timezone
         const dateObj = new Date(shift.date);
@@ -201,15 +231,30 @@ export default function ShiftCalendar() {
       setEvents(formattedEvents);
     } catch (error) {
       console.error("Falha ao buscar plantões:", error);
-      alert('Erro ao carregar plantões.');
+      setEvents([]);
+      toast.error(error instanceof Error ? error.message : 'Erro ao carregar plantões.');
     }
   };
 
   const fetchAllTeamsShifts = async () => {
     try {
       // Buscar plantões de todas as equipes
-      const allShiftsPromises = teams.map(team => 
-        fetch(`/api/shifts?teamId=${team.id}`).then(res => res.json())
+      const allShiftsPromises = teams.map(async (team) => {
+        const response = await fetch(`/api/shifts?teamId=${team.id}`);
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(extractApiError(payload, `Erro ao carregar plantões da equipe ${team.name}.`));
+        }
+
+        if (!Array.isArray(payload)) {
+          throw new Error(
+            extractApiError(payload, `Resposta inválida ao carregar plantões da equipe ${team.name}.`)
+          );
+        }
+
+        return payload;
+      }
       );
       
       const allShiftsArrays = await Promise.all(allShiftsPromises);
@@ -253,7 +298,8 @@ export default function ShiftCalendar() {
       setEvents(formattedEvents);
     } catch (error) {
       console.error("Falha ao buscar plantões de todas as equipes:", error);
-      alert('Erro ao carregar plantões.');
+      setEvents([]);
+      toast.error(error instanceof Error ? error.message : 'Erro ao carregar plantões.');
     }
   };
 
@@ -324,6 +370,9 @@ export default function ShiftCalendar() {
   const handleCloseModal = () => {
     setShowAddModal(false);
     setSelectedSlotId('');
+    setRecurrenceEnabled(false);
+    setRecurrenceEndDate('');
+    setRecurrenceWeekdays([]);
   };
   const handleCloseEditModal = () => {
     setShowEditModal(false);
@@ -388,6 +437,9 @@ export default function ShiftCalendar() {
 
     setSelectedPeriod('MORNING');
     setSelectedSlotId('');
+    setRecurrenceEnabled(false);
+    setRecurrenceEndDate(arg.dateStr);
+    setRecurrenceWeekdays([arg.date.getDay()]);
     setShowAddModal(true);
   };
 
@@ -409,6 +461,14 @@ export default function ShiftCalendar() {
       toast.warning('Por favor, preencha todos os campos.');
       return;
     }
+    if (recurrenceEnabled && !recurrenceEndDate) {
+      toast.warning('Informe a data final da recorrência.');
+      return;
+    }
+    if (recurrenceEnabled && recurrenceWeekdays.length === 0) {
+      toast.warning('Selecione ao menos um dia da semana para a recorrência.');
+      return;
+    }
     try {
       const response = await fetch('/api/shifts', {
         method: 'POST',
@@ -419,15 +479,31 @@ export default function ShiftCalendar() {
           physiotherapistId: parseInt(selectedPhysioId),
           shiftTeamId: parseInt(viewingTeamId),
           shiftTeamSlotId: parseInt(selectedSlotId),
+          recurrence: recurrenceEnabled
+            ? {
+                frequency: recurrenceWeekdays.length === 1 ? 'WEEKLY' : 'CUSTOM_WEEKLY',
+                untilDate: recurrenceEndDate,
+                weekdays: recurrenceWeekdays,
+              }
+            : undefined,
         }),
       });
       const json = await response.json();
       if (!response.ok) {
         throw new Error(json.error || 'Falha ao salvar o plantão');
       }
-      await fetchShifts(viewingTeamId);
+      if (viewAllTeams) {
+        await fetchAllTeamsShifts();
+      } else {
+        await fetchShifts(viewingTeamId);
+      }
       handleCloseModal();
       toast.success(json.message || 'Plantão criado com sucesso');
+      if (json.summary?.mode === 'RECURRING' && json.summary?.skipped?.length > 0) {
+        toast.warning(
+          `${json.summary.skipped.length} ocorrência(s) foram puladas por conflito, indisponibilidade ou falta de vaga.`
+        );
+      }
     } catch (error: any) {
       console.error(error);
       toast.error(error.message);
@@ -1198,6 +1274,9 @@ export default function ShiftCalendar() {
                         setSelectedPhysioId('');
                         setSelectedPeriod('MORNING');
                         setSelectedSlotId('');
+                        setRecurrenceEnabled(false);
+                        setRecurrenceEndDate(today);
+                        setRecurrenceWeekdays([new Date().getDay()]);
                         setShowMobileCalendar(false);
                         setShowAddModal(true);
                       }}
@@ -1462,6 +1541,104 @@ export default function ShiftCalendar() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-start gap-3">
+                <input
+                  id="recurrence-enabled"
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-gray-300"
+                  checked={recurrenceEnabled}
+                  onChange={(event) => {
+                    setRecurrenceEnabled(event.target.checked);
+                    if (event.target.checked && !recurrenceEndDate) {
+                      setRecurrenceEndDate(selectedDate);
+                    }
+                  }}
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="recurrence-enabled" className="text-base font-medium">
+                    Criar recorrência
+                  </Label>
+                  <p className="text-sm text-gray-500">
+                    Gera plantões em uma faixa de datas usando os dias da semana selecionados.
+                  </p>
+                </div>
+              </div>
+
+              {recurrenceEnabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="recurrence-end-date" className="text-sm font-medium">
+                    Repetir até
+                  </Label>
+                  <input
+                    id="recurrence-end-date"
+                    type="date"
+                    className="form-control"
+                    min={selectedDate}
+                    value={recurrenceEndDate}
+                    onChange={(event) => setRecurrenceEndDate(event.target.value)}
+                  />
+                  <p className="text-sm text-gray-500">
+                    O sistema tenta criar cada ocorrência na faixa e pula automaticamente datas com conflito, vaga ocupada ou indisponibilidade.
+                  </p>
+
+                  <div className="pt-2">
+                    <Label className="text-sm font-medium">Dias da semana</Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {recurrenceWeekdayOptions.map((weekday) => {
+                        const selected = recurrenceWeekdays.includes(weekday.value);
+
+                        return (
+                          <button
+                            key={weekday.value}
+                            type="button"
+                            onClick={() =>
+                              setRecurrenceWeekdays((current) =>
+                                current.includes(weekday.value)
+                                  ? current.filter((value) => value !== weekday.value)
+                                  : [...current, weekday.value].sort((a, b) => a - b)
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                              selected
+                                ? 'border-indigo-600 bg-indigo-600 text-white'
+                                : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
+                          >
+                            {weekday.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setRecurrenceWeekdays(selectedDate ? [new Date(`${selectedDate}T12:00:00`).getDay()] : [])}
+                      >
+                        Apenas dia inicial
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setRecurrenceWeekdays([1, 2, 3, 4, 5])}
+                      >
+                        Seg a sex
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setRecurrenceWeekdays([0, 1, 2, 3, 4, 5, 6])}
+                      >
+                        Todos os dias
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
@@ -1474,10 +1651,10 @@ export default function ShiftCalendar() {
             </Button>
             <Button 
               onClick={handleSaveShift}
-              disabled={availableSlotOptions.length === 0}
+              disabled={availableSlotOptions.length === 0 || (recurrenceEnabled && !recurrenceEndDate)}
               className="h-12 text-base w-full sm:w-auto"
             >
-              Salvar Plantão
+              {recurrenceEnabled ? 'Criar Recorrência' : 'Salvar Plantão'}
             </Button>
           </DialogFooter>
         </DialogContent>

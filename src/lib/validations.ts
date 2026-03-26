@@ -57,7 +57,7 @@ export async function getCustomShiftValueForDate(
   });
 
   if (priceHistory) {
-    return Number(priceHistory.customShiftValue);
+    return priceHistory.customShiftValue !== null ? Number(priceHistory.customShiftValue) : null;
   }
 
   // Se não houver histórico, usar valor customizado atual
@@ -66,7 +66,9 @@ export async function getCustomShiftValueForDate(
     select: { customShiftValue: true },
   });
 
-  return physioTeam?.customShiftValue ? Number(physioTeam.customShiftValue) : null;
+  return physioTeam?.customShiftValue !== null && physioTeam?.customShiftValue !== undefined
+    ? Number(physioTeam.customShiftValue)
+    : null;
 }
 
 /**

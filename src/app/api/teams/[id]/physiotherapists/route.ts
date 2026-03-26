@@ -29,6 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const physios = await prisma.physiotherapistTeam.findMany({
       where: {
         shiftTeamId: teamId,
+        isActive: true,
         ...(currentPhysioId ? { physiotherapistId: { not: currentPhysioId } } : {}),
       },
       include: { physiotherapist: true },

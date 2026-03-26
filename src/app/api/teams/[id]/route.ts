@@ -44,6 +44,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   const data = await request.json();
   const name = typeof data.name === 'string' ? data.name.trim() : '';
   const shiftValue = Number(data.shiftValue ?? 0);
+  const priceChangeReason =
+    typeof data.priceChangeReason === 'string' && data.priceChangeReason.trim()
+      ? data.priceChangeReason.trim()
+      : null;
   const slotPayload = data.slots
     ? normalizeTeamSlotPayload(data.slots)
     : buildTeamSlotPayloadFromLegacyCounts(data);
@@ -161,6 +165,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
             shiftValue,
             effectiveFrom: new Date(),
             createdBy: userId,
+            updatedBy: userId,
+            changeReason: priceChangeReason ?? 'Atualização direta do valor da equipe',
           },
         });
       }

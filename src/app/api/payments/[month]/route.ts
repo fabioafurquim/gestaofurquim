@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import fs from 'fs';
 import path from 'path';
+
+import { prisma } from '@/lib/prisma';
+import {
+  buildMonthlyShiftPaymentEntries,
+  groupMonthlyShiftPaymentEntries,
+} from '@/lib/payment-calculator';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'payments');
 
@@ -45,8 +50,7 @@ export async function GET(
 ) {
   try {
     const { month } = await params;
-    
-    // Validar formato do mês (YYYY-MM)
+
     const monthRegex = /^\d{4}-\d{2}$/;
     if (!monthRegex.test(month)) {
       return NextResponse.json(
@@ -57,73 +61,66 @@ export async function GET(
 
     const [year, monthNumber] = month.split('-').map(Number);
     const startDate = new Date(year, monthNumber - 1, 1);
-    const endDate = new Date(year, monthNumber, 0, 23, 59, 59, 999);
 
-    // Buscar ou criar o controle mensal
     let monthlyControl = await prisma.monthlyPaymentControl.findUnique({
       where: { referenceMonth: month },
       include: {
-        payments: true
-      }
+        payments: true,
+      },
     });
 
-    // Buscar todos os fisioterapeutas ativos
+    const entries = await buildMonthlyShiftPaymentEntries(month);
+    const summaries = groupMonthlyShiftPaymentEntries(entries);
+    const summaryByPhysioId = new Map(
+      summaries.map((summary) => [summary.physiotherapistId, summary] as const)
+    );
+
     const physiotherapists = await prisma.physiotherapist.findMany({
       where: {
-        status: 'ACTIVE'
+        status: 'ACTIVE',
       },
       select: {
         id: true,
         name: true,
         email: true,
         contractType: true,
-        hourValue: true,
-        additionalValue: true
-      }
+        additionalValue: true,
+      },
     });
 
-    // Diretório de uploads do mês
     const monthDir = path.join(UPLOADS_DIR, month);
     const uploadedFiles = fs.existsSync(monthDir) ? fs.readdirSync(monthDir) : [];
 
-    // Buscar plantões do mês para cada fisioterapeuta
     const paymentData: PaymentData[] = [];
 
     for (const physio of physiotherapists) {
-      // Contar plantões no período
-      const shiftsCount = await prisma.shift.count({
-        where: {
-          physiotherapistId: physio.id,
-          date: {
-            gte: startDate,
-            lte: endDate
-          }
-        }
-      });
-
-      const totalShiftValue = shiftsCount * (Number(physio.hourValue) || 0);
+      const summary = summaryByPhysioId.get(physio.id);
+      const totalShifts = summary?.totalShifts ?? 0;
+      const totalShiftValue = summary?.totalShiftValue ?? 0;
       const additionalValue = Number(physio.additionalValue) || 0;
       const grossValue = totalShiftValue + additionalValue;
 
-      // Buscar registro de pagamento existente
       const existingRecord = monthlyControl?.payments.find(
-        p => p.physiotherapistId === physio.id
+        (payment) => payment.physiotherapistId === physio.id
       );
 
-      // Verificar arquivos locais
       const sanitizedName = physio.name.replace(/[^a-zA-Z0-9]/g, '_');
-      const rpaFile = uploadedFiles.find(f => f.startsWith(`RPA_${sanitizedName}_${month}`));
-      const nfFile = uploadedFiles.find(f => f.startsWith(`NF_${sanitizedName}_${month}`));
+      const rpaFile = uploadedFiles.find((file) =>
+        file.startsWith(`RPA_${sanitizedName}_${month}`)
+      );
+      const nfFile = uploadedFiles.find((file) =>
+        file.startsWith(`NF_${sanitizedName}_${month}`)
+      );
 
       paymentData.push({
         physiotherapistId: physio.id,
         name: physio.name,
         email: physio.email || '',
         contractType: (physio.contractType as 'PJ' | 'RPA' | 'NO_CONTRACT') || 'NO_CONTRACT',
-        totalShifts: shiftsCount,
+        totalShifts,
         totalShiftValue,
         additionalValue,
-        grossValue: existingRecord ? Number(existingRecord.grossValue) : grossValue,
+        grossValue,
         netValue: existingRecord ? Number(existingRecord.netValue) : grossValue,
         rpaFileName: existingRecord?.rpaFileName || rpaFile || null,
         rpaFileId: existingRecord?.rpaFileId || null,
@@ -139,19 +136,17 @@ export async function GET(
         nfFilePath: nfFile ? path.join(monthDir, nfFile) : null,
         approved: existingRecord?.status === 'PAID' || false,
         emailStatus: (existingRecord?.emailStatus as 'PENDING' | 'SENT' | 'FAILED') || 'PENDING',
-        emailSentAt: existingRecord?.emailSentAt?.toISOString() || null
+        emailSentAt: existingRecord?.emailSentAt?.toISOString() || null,
       });
     }
 
-    // Ordenar por nome
     paymentData.sort((a, b) => a.name.localeCompare(b.name));
 
     return NextResponse.json({
       month,
       monthName: startDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-      payments: paymentData
+      payments: paymentData,
     });
-
   } catch (error) {
     console.error('Erro ao buscar dados de pagamento:', error);
     return NextResponse.json(
@@ -174,7 +169,6 @@ export async function PUT(
     const body = await request.json();
     const { payments } = body;
 
-    // Validar formato do mês
     const monthRegex = /^\d{4}-\d{2}$/;
     if (!monthRegex.test(month)) {
       return NextResponse.json(
@@ -183,7 +177,6 @@ export async function PUT(
       );
     }
 
-    // Validar dados de entrada
     if (!Array.isArray(payments)) {
       return NextResponse.json(
         { error: 'Dados de pagamento inválidos' },
@@ -191,25 +184,23 @@ export async function PUT(
       );
     }
 
-    // Buscar ou criar o controle mensal
     let monthlyControl = await prisma.monthlyPaymentControl.findUnique({
-      where: { referenceMonth: month }
+      where: { referenceMonth: month },
     });
 
     if (!monthlyControl) {
       monthlyControl = await prisma.monthlyPaymentControl.create({
-        data: { referenceMonth: month }
+        data: { referenceMonth: month },
       });
     }
 
-    // Atualizar ou criar registros de pagamento
     for (const payment of payments) {
       await prisma.paymentRecord.upsert({
         where: {
           monthlyControlId_physiotherapistId: {
             monthlyControlId: monthlyControl.id,
-            physiotherapistId: payment.physiotherapistId
-          }
+            physiotherapistId: payment.physiotherapistId,
+          },
         },
         update: {
           grossValue: payment.grossValue,
@@ -225,7 +216,7 @@ export async function PUT(
           nfFileName: payment.nfFileName,
           nfFileId: payment.nfFileId,
           status: payment.approved ? 'PAID' : 'PENDING',
-          emailStatus: payment.emailStatus || 'PENDING'
+          emailStatus: payment.emailStatus || 'PENDING',
         },
         create: {
           monthlyControlId: monthlyControl.id,
@@ -243,17 +234,16 @@ export async function PUT(
           nfFileName: payment.nfFileName,
           nfFileId: payment.nfFileId,
           status: payment.approved ? 'PAID' : 'PENDING',
-          emailStatus: payment.emailStatus || 'PENDING'
-        }
+          emailStatus: payment.emailStatus || 'PENDING',
+        },
       });
     }
 
     return NextResponse.json({
       success: true,
       message: 'Dados de pagamento atualizados com sucesso',
-      payments
+      payments,
     });
-
   } catch (error) {
     console.error('Erro ao atualizar dados de pagamento:', error);
     return NextResponse.json(

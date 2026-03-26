@@ -93,6 +93,7 @@ export async function PATCH(
         where: {
           physiotherapistId: user.physiotherapistId,
           shiftTeamId: swapRequest.shift.shiftTeamId,
+          isActive: true,
         },
       });
 
