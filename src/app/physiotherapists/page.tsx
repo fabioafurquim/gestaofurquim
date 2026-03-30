@@ -12,7 +12,7 @@ export default function PhysiotherapistsPage() {
           <p className="text-gray-600">Gerencie os fisioterapeutas cadastrados no sistema</p>
         </div>
         <div className="flex items-center gap-3">
-          <a
+          <Link
             href="/api/physiotherapists/form-template"
             className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 shadow-sm transition hover:bg-blue-100"
           >
@@ -20,7 +20,7 @@ export default function PhysiotherapistsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11V3m0 8l-4-4m4 4l4-4m-9 8v4a2 2 0 002 2h10a2 2 0 002-2v-4" />
             </svg>
             Gerar formulário
-          </a>
+          </Link>
           <Link 
             href="/physiotherapists/new" 
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

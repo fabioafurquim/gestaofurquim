@@ -62,7 +62,7 @@ export async function GET(
     const [year, monthNumber] = month.split('-').map(Number);
     const startDate = new Date(year, monthNumber - 1, 1);
 
-    let monthlyControl = await prisma.monthlyPaymentControl.findUnique({
+    const monthlyControl = await prisma.monthlyPaymentControl.findUnique({
       where: { referenceMonth: month },
       include: {
         payments: true,

@@ -1,28 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
+import { requireAdmin } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('[Test Prisma] Testando acesso aos campos do Telegram...');
-    
-    // Tentar buscar fisioterapeutas com campos do Telegram
-    const physios = await prisma.physiotherapist.findMany({
-      select: {
-        id: true,
-        name: true,
-        telegramChatId: true,
-        telegramUsername: true,
+    const { error } = await requireAdmin();
+    if (error) return error;
+
+    const linkedCount = await prisma.physiotherapist.count({
+      where: {
+        OR: [
+          { telegramChatId: { not: null } },
+          { telegramUsername: { not: null } },
+        ],
       },
-      take: 5
     });
 
-    console.log('[Test Prisma] Fisioterapeutas encontrados:', physios.length);
-    
     return NextResponse.json({
       success: true,
       message: 'Prisma Client está funcionando corretamente',
-      physiotherapists: physios,
-      prismaClientVersion: require('@prisma/client/package.json').version,
+      linkedTelegramAccounts: linkedCount,
+      prismaClientVersion: Prisma.prismaVersion.client,
     });
   } catch (error) {
     console.error('[Test Prisma] Erro:', error);
@@ -30,8 +29,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : 'N/A',
-      prismaClientVersion: require('@prisma/client/package.json').version,
+      prismaClientVersion: Prisma.prismaVersion.client,
     }, { status: 500 });
   }
 }

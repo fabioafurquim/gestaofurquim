@@ -1,7 +1,7 @@
 import { ShiftPeriod } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/auth-helpers';
+import { requireAdminOrManager } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import {
   buildTeamSlotPayloadFromLegacyCounts,
@@ -11,6 +11,9 @@ import { buildTeamSlotCounts, syncTeamSlots } from '@/lib/team-slot-sync';
 import { validateSlotReduction } from '@/lib/validations';
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { error } = await requireAdminOrManager();
+  if (error) return error;
+
   const { id } = await context.params;
 
   try {
@@ -36,7 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
-  const { session, error } = await requireAuth();
+  const { user, error } = await requireAdminOrManager();
   if (error) return error;
 
   const { id } = await context.params;
@@ -156,8 +159,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
       await syncTeamSlots(tx, teamId, slotPayload);
 
-      if (valueChanged && shiftValue > 0 && session) {
-        const userId = typeof session.user.id === 'string' ? parseInt(session.user.id, 10) : session.user.id;
+      if (valueChanged && shiftValue > 0) {
+        const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
 
         await tx.shiftTeamPriceHistory.create({
           data: {
@@ -190,7 +193,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAuth();
+  const { error } = await requireAdminOrManager();
   if (error) return error;
 
   const { id } = await context.params;

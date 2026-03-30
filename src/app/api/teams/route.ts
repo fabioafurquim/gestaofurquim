@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/auth-helpers';
+import { requireAdminOrManager, requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import {
   buildTeamSlotPayloadFromLegacyCounts,
@@ -10,7 +10,30 @@ import { buildTeamSlotCounts, createTeamSlots } from '@/lib/team-slot-sync';
 
 export async function GET() {
   try {
+    const { error, user } = await requireAuth();
+    if (error) return error;
+
+    if (user.role === 'USER' && !user.physiotherapistId) {
+      return NextResponse.json(
+        { error: 'Usuário não está vinculado a um fisioterapeuta.' },
+        { status: 403 }
+      );
+    }
+
+    const whereClause =
+      user.role === 'USER' && user.physiotherapistId
+        ? {
+            physiotherapists: {
+              some: {
+                physiotherapistId: Number(user.physiotherapistId),
+                isActive: true,
+              },
+            },
+          }
+        : undefined;
+
     const teams = await prisma.shiftTeam.findMany({
+      where: whereClause,
       orderBy: { name: 'asc' },
       include: {
         shiftSlots: {
@@ -28,7 +51,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error, user } = await requireAuth();
+  const { error, user } = await requireAdminOrManager();
   if (error) return error;
 
   const data = await request.json();

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
+import { requireAdminOrManager, requireAuth } from '@/lib/auth-helpers';
+import { prisma } from '@/lib/prisma';
 
 // Schema de validação para atualização de feriado
 const updateHolidaySchema = z.object({
@@ -18,6 +17,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { error } = await requireAuth();
+    if (error) return error;
+
     const { id: idParam } = await params;
     const id = parseInt(idParam);
     
@@ -57,6 +59,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { error } = await requireAdminOrManager();
+    if (error) return error;
+
     const { id: idParam } = await params;
     const id = parseInt(idParam);
     
@@ -113,6 +118,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { error } = await requireAdminOrManager();
+    if (error) return error;
+
     const { id: idParam } = await params;
     const id = parseInt(idParam);
     

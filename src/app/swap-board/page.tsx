@@ -340,6 +340,28 @@ function SwapBoardContent() {
     }
   };
 
+  const handleRejectApprovalSwap = async (swapId: number) => {
+    if (!confirm('Tem certeza que deseja reprovar esta troca?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/swap-requests/${swapId}/reject`, {
+        method: 'PATCH',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao reprovar troca');
+      }
+
+      setSuccessMessage('Troca reprovada com sucesso!');
+      fetchSwapRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao reprovar troca');
+    }
+  };
+
   const filteredSwaps = swapRequests.filter(swap => {
     if (filter === 'pending') {
       return swap.status === 'PENDING';
@@ -597,12 +619,20 @@ function SwapBoardContent() {
 
                     {swap.status === 'PENDING_APPROVAL' && 
                      (session?.user?.role === 'ADMIN' || session?.user?.role === 'MANAGER') && (
-                      <button
-                        onClick={() => handleApproveSwap(swap.id)}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        Aprovar Troca
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleApproveSwap(swap.id)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          Aprovar Troca
+                        </button>
+                        <button
+                          onClick={() => handleRejectApprovalSwap(swap.id)}
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                        >
+                          Reprovar Troca
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

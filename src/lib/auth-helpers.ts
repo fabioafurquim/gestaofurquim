@@ -80,3 +80,27 @@ export async function requireAdminOrManager() {
   
   return { error: null, user };
 }
+
+/**
+ * Helper para verificar se o usuário tem uma das roles permitidas
+ */
+export async function requireRole(allowedRoles: Array<'ADMIN' | 'MANAGER' | 'USER'>) {
+  const { error, user, session } = await requireAuth();
+
+  if (error) {
+    return { error, user: null, session: null };
+  }
+
+  if (!allowedRoles.includes(user!.role)) {
+    return {
+      error: NextResponse.json(
+        { error: 'Acesso negado. Usuário sem permissão para esta operação.' },
+        { status: 403 }
+      ),
+      user: null,
+      session: null,
+    };
+  }
+
+  return { error: null, user, session };
+}

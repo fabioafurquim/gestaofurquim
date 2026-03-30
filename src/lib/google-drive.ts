@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 
 const CREDENTIALS_PATH = path.join(process.cwd(), 'google-credentials.json');
 const TOKEN_PATH = path.join(process.cwd(), 'google-token.json');
@@ -306,7 +307,7 @@ export async function uploadBufferToDrive(
     },
     media: {
       mimeType,
-      body: require('stream').Readable.from(fileBuffer),
+      body: Readable.from(fileBuffer),
     },
     fields: 'id, name, webViewLink',
   });
@@ -351,7 +352,7 @@ export async function uploadFileToDrive(
     },
     media: {
       mimeType,
-      body: require('stream').Readable.from(fileBuffer),
+      body: Readable.from(fileBuffer),
     },
     fields: 'id, name, webViewLink',
   });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth-helpers';
+import { requireAdminOrManager, requireAuth } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import {
   normalizePhysiotherapistTeamAssignments,
@@ -8,17 +8,59 @@ import {
 
 export async function GET() {
   try {
+    const { error, user } = await requireAuth();
+    if (error) return error;
+
+    if (user.role === 'USER' && !user.physiotherapistId) {
+      return NextResponse.json(
+        { error: 'Usuário não está vinculado a um fisioterapeuta.' },
+        { status: 403 }
+      );
+    }
+
+    const whereClause =
+      user.role === 'USER' && user.physiotherapistId
+        ? { id: Number(user.physiotherapistId) }
+        : undefined;
+
     const physiotherapists = await prisma.physiotherapist.findMany({
-      include: { 
+      where: whereClause,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        crefito: true,
+        cpf: user.role === 'USER' ? false : true,
+        rg: user.role === 'USER' ? false : true,
+        birthDate: user.role === 'USER' ? false : true,
+        address: user.role === 'USER' ? false : true,
+        startDate: true,
+        exitDate: true,
+        hourValue: true,
+        additionalValue: true,
+        status: true,
+        contractType: true,
+        banco: user.role === 'USER' ? false : true,
+        agencia: user.role === 'USER' ? false : true,
+        conta: user.role === 'USER' ? false : true,
+        tipoPix: user.role === 'USER' ? false : true,
+        chavePix: user.role === 'USER' ? false : true,
+        nomeEmpresa: user.role === 'USER' ? false : true,
+        cnpjEmpresa: user.role === 'USER' ? false : true,
+        enderecoEmpresa: user.role === 'USER' ? false : true,
+        telegramChatId: user.role === 'USER' ? false : true,
+        telegramUsername: user.role === 'USER' ? false : true,
         teams: {
           where: { isActive: true },
           include: {
-            shiftTeam: true
-          }
-        }
+            shiftTeam: true,
+          },
+        },
       },
       orderBy: { name: 'asc' },
     });
+
     return NextResponse.json(physiotherapists);
   } catch (error) {
     return NextResponse.json({ error: 'Erro ao buscar fisioterapeutas' }, { status: 500 });
@@ -27,7 +69,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { error, user } = await requireAuth();
+    const { error, user } = await requireAdminOrManager();
     if (error) return error;
 
     const data = await request.json();

@@ -31,19 +31,6 @@ export async function PATCH(
       );
     }
 
-    // Busca o fisioterapeuta vinculado ao usuário
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { physiotherapistId: true },
-    });
-
-    if (!user?.physiotherapistId) {
-      return NextResponse.json(
-        { error: 'Usuário não está vinculado a um fisioterapeuta' },
-        { status: 400 }
-      );
-    }
-
     // Busca a solicitação de troca
     const swapRequest = await prisma.shiftSwapRequest.findUnique({
       where: { id: swapRequestId },
@@ -63,6 +50,33 @@ export async function PATCH(
       );
     }
 
+    const isManager = session.user.role === 'ADMIN' || session.user.role === 'MANAGER';
+
+    if (swapRequest.status === 'PENDING_APPROVAL' && isManager) {
+      const updatedSwapRequest = await prisma.shiftSwapRequest.update({
+        where: { id: swapRequestId },
+        data: {
+          status: 'REJECTED',
+          approvedBy: userId,
+          approvedAt: new Date(),
+        },
+        include: {
+          shift: {
+            include: {
+              shiftTeam: true,
+              physiotherapist: true,
+            },
+          },
+          requester: true,
+          targetPhysio: true,
+          responder: true,
+          approver: true,
+        },
+      });
+
+      return NextResponse.json(updatedSwapRequest);
+    }
+
     // Verifica se a solicitação está pendente
     if (swapRequest.status !== 'PENDING') {
       return NextResponse.json(
@@ -71,8 +85,20 @@ export async function PATCH(
       );
     }
 
+    // Busca o fisioterapeuta vinculado ao usuário
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { physiotherapistId: true },
+    });
+
+    if (!user?.physiotherapistId) {
+      return NextResponse.json(
+        { error: 'Usuário não está vinculado a um fisioterapeuta' },
+        { status: 400 }
+      );
+    }
+
     // Verifica se o usuário pode rejeitar esta troca
-    // Pode rejeitar se é o destinatário da troca
     const canReject = swapRequest.targetPhysioId === user.physiotherapistId;
 
     if (!canReject) {

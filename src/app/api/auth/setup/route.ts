@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { execSync } from 'child_process';
 import { prisma } from '@/lib/prisma';
 import { signIn } from '@/auth';
 import { hashPassword, needsInitialSetup } from '@/lib/auth';
@@ -14,32 +13,6 @@ const setupSchema = z.object({
   message: 'Senhas não coincidem',
   path: ['confirmPassword'],
 });
-
-/**
- * Executa migrações do Prisma se necessário
- */
-async function ensureMigrations(): Promise<void> {
-  try {
-    console.log('🔄 Executando migrações do Prisma...');
-    
-    // Executa as migrações
-    execSync('npx prisma migrate deploy', { 
-      stdio: 'inherit',
-      env: { ...process.env }
-    });
-    
-    // Gera o cliente Prisma
-    execSync('npx prisma generate', { 
-      stdio: 'inherit',
-      env: { ...process.env }
-    });
-    
-    console.log('✅ Migrações executadas com sucesso!');
-  } catch (error) {
-    console.error('❌ Erro ao executar migrações:', error);
-    throw error;
-  }
-}
 
 /**
  * POST /api/auth/setup
@@ -61,8 +34,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validatedData = setupSchema.parse(body);
 
-    // Tenta verificar se já existe um usuário com este email
-    // Se falhar com P2021, executa migrações primeiro
     let existingUser;
     try {
       existingUser = await prisma.user.findUnique({
@@ -70,16 +41,15 @@ export async function POST(request: NextRequest) {
       });
     } catch (error: any) {
       if (error.code === 'P2021') {
-        console.log('🔄 Tabelas não existem. Executando migrações...');
-        await ensureMigrations();
-        
-        // Tenta novamente após as migrações
-        existingUser = await prisma.user.findUnique({
-          where: { email: validatedData.email }
-        });
-      } else {
-        throw error;
+        return NextResponse.json(
+          {
+            error: 'Banco de dados ainda não inicializado. Execute as migrations do Prisma antes do setup inicial.',
+          },
+          { status: 503 }
+        );
       }
+
+      throw error;
     }
 
     if (existingUser) {

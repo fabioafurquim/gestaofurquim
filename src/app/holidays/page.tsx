@@ -379,7 +379,7 @@ export default function HolidaysPage() {
           <DialogHeader>
             <DialogTitle>Confirmar Exclusão</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir o feriado "{confirmDelete?.name}"?
+              Tem certeza que deseja excluir o feriado &quot;{confirmDelete?.name}&quot;?
               <br />
               <strong>Esta ação não pode ser desfeita.</strong>
             </DialogDescription>

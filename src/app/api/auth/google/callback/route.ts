@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth-helpers';
 import { exchangeCodeForTokens } from '@/lib/google-drive';
 
 /**
@@ -7,6 +8,11 @@ import { exchangeCodeForTokens } from '@/lib/google-drive';
  */
 export async function GET(request: NextRequest) {
   try {
+    const { error: authError } = await requireAdmin();
+    if (authError) {
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get('code');
     const error = searchParams.get('error');

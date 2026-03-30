@@ -14,7 +14,7 @@ export class ShiftCreationError extends Error {
   }
 }
 
-type PreferredSlot = Pick<ShiftTeamSlot, 'id' | 'description' | 'sortOrder' | 'shiftTeamId' | 'period'>;
+export type PreferredSlot = Pick<ShiftTeamSlot, 'id' | 'description' | 'sortOrder' | 'shiftTeamId' | 'period'>;
 
 export function parseShiftDate(value: string | Date) {
   const parsed =
@@ -32,7 +32,7 @@ export function parseShiftDate(value: string | Date) {
   return parsed;
 }
 
-function toDateOnlyString(date: Date) {
+export function toDateOnlyString(date: Date) {
   return date.toISOString().split('T')[0]!;
 }
 
@@ -62,12 +62,34 @@ export async function validatePhysiotherapistForShift(
   return physio;
 }
 
-async function resolveTargetSlot(
+export async function validateShiftDuplicate(params: {
+  physiotherapistId: number;
+  date: Date;
+  period: ShiftPeriod;
+  ignoreShiftId?: number;
+}) {
+  const duplicate = await prisma.shift.findFirst({
+    where: {
+      ...(params.ignoreShiftId ? { id: { not: params.ignoreShiftId } } : {}),
+      physiotherapistId: params.physiotherapistId,
+      date: params.date,
+      period: params.period,
+    },
+    select: { id: true },
+  });
+
+  if (duplicate) {
+    throw new ShiftCreationError('JÃ¡ existe um plantÃ£o para este fisioterapeuta nesta data e perÃ­odo.', 409);
+  }
+}
+
+export async function resolveTargetSlot(
   shiftTeamId: number,
   period: ShiftPeriod,
   shiftDate: Date,
   explicitSlotId?: number,
-  preferredSlot?: PreferredSlot
+  preferredSlot?: PreferredSlot,
+  ignoreShiftId?: number
 ) {
   const isWeekendOrHoliday = isWeekend(shiftDate) || (await isHoliday(shiftDate));
   const slotDayType = getSlotDayTypeForDate(shiftDate, isWeekendOrHoliday);
@@ -96,6 +118,7 @@ async function resolveTargetSlot(
 
   const occupiedSlotIds = await prisma.shift.findMany({
     where: {
+      ...(ignoreShiftId ? { id: { not: ignoreShiftId } } : {}),
       date: shiftDate,
       period,
       shiftTeamId,
@@ -159,18 +182,11 @@ export async function createSingleShift(params: {
 }) {
   await validatePhysiotherapistForShift(params.physiotherapistId, params.shiftTeamId, params.date);
 
-  const duplicate = await prisma.shift.findFirst({
-    where: {
-      physiotherapistId: params.physiotherapistId,
-      date: params.date,
-      period: params.period,
-    },
-    select: { id: true },
+  await validateShiftDuplicate({
+    physiotherapistId: params.physiotherapistId,
+    date: params.date,
+    period: params.period,
   });
-
-  if (duplicate) {
-    throw new ShiftCreationError('Já existe um plantão para este fisioterapeuta nesta data e período.', 409);
-  }
 
   const targetSlotId = await resolveTargetSlot(
     params.shiftTeamId,

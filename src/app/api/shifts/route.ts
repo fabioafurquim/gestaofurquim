@@ -4,13 +4,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { sendInstantNotification } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
-import {
-  createRecurringShiftsByWeekdays,
-  createSingleShift,
-  getPreferredSlot,
-  parseShiftDate,
-  ShiftCreationError,
-} from '@/lib/shift-creation';
+import { createRecurringShiftSeries, type ActingUser } from '@/lib/shift-series';
+import { createSingleShift, getPreferredSlot, parseShiftDate, ShiftCreationError } from '@/lib/shift-creation';
+
+function toActingUser(user: { id: number | string; name: string; role: 'ADMIN' | 'MANAGER' | 'USER' }): ActingUser {
+  return {
+    id: typeof user.id === 'string' ? parseInt(user.id, 10) : user.id,
+    name: user.name,
+    role: user.role,
+  };
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -38,7 +41,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Fisioterapeuta do usuário não encontrado' }, { status: 403 });
       }
 
-      const userBelongsToTeam = userPhysio.teams.some((team: { shiftTeamId: number }) => team.shiftTeamId === parseInt(teamId, 10));
+      const userBelongsToTeam = userPhysio.teams.some(
+        (team: { shiftTeamId: number }) => team.shiftTeamId === parseInt(teamId, 10)
+      );
       if (!userBelongsToTeam) {
         return NextResponse.json({ error: 'Acesso negado a esta equipe' }, { status: 403 });
       }
@@ -50,13 +55,29 @@ export async function GET(request: NextRequest) {
         physiotherapist: true,
         shiftTeam: true,
         shiftTeamSlot: true,
+        shiftSeries: {
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            weekdays: true,
+            status: true,
+            shiftTeamSlotId: true,
+            period: true,
+          },
+        },
+        seriesException: {
+          select: {
+            type: true,
+          },
+        },
       },
       orderBy: [{ date: 'asc' }, { shiftTeamSlot: { sortOrder: 'asc' } }, { physiotherapist: { name: 'asc' } }],
     });
 
     return NextResponse.json(shifts);
-  } catch (error) {
-    console.error('Erro ao buscar plantões:', error);
+  } catch (caughtError) {
+    console.error('Erro ao buscar plantões:', caughtError);
     return NextResponse.json({ error: 'Erro ao buscar plantões' }, { status: 500 });
   }
 }
@@ -124,9 +145,9 @@ export async function POST(request: Request) {
         );
       }
 
-      const result = await createRecurringShiftsByWeekdays({
+      const result = await createRecurringShiftSeries({
         startDate: normalizedDate,
-        untilDate,
+        endDate: untilDate,
         weekdays:
           recurrence.weekdays && recurrence.weekdays.length > 0
             ? recurrence.weekdays
@@ -134,7 +155,8 @@ export async function POST(request: Request) {
         period,
         physiotherapistId: Number(physiotherapistId),
         shiftTeamId: Number(shiftTeamId),
-        preferredSlot,
+        shiftTeamSlotId: Number(shiftTeamSlotId),
+        actingUser: toActingUser(currentUser),
       });
 
       result.created.forEach((shift) => {
@@ -181,11 +203,11 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ message: 'Plantão criado com sucesso', shift }, { status: 201 });
-  } catch (error) {
-    console.error('Erro ao criar plantão:', error);
+  } catch (caughtError) {
+    console.error('Erro ao criar plantão:', caughtError);
 
-    if (error instanceof ShiftCreationError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    if (caughtError instanceof ShiftCreationError) {
+      return NextResponse.json({ error: caughtError.message }, { status: caughtError.statusCode });
     }
 
     return NextResponse.json({ error: 'Erro ao criar plantão' }, { status: 500 });

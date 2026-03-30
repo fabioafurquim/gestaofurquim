@@ -7,6 +7,7 @@
     "build": "npx prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "db:studio": "npx prisma studio",
     "db:migrate": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",

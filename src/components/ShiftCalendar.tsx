@@ -78,6 +78,12 @@ const recurrenceWeekdayOptions = [
   { value: 0, label: 'Dom' },
 ];
 
+const seriesScopeOptions = [
+  { value: 'THIS', label: 'Somente este plantão' },
+  { value: 'THIS_AND_FUTURE', label: 'Este e os próximos' },
+  { value: 'ALL', label: 'Série inteira' },
+] as const;
+
 export default function ShiftCalendar() {
   const { data: session } = useSession();
   const calendarRef = useRef<any>(null);
@@ -95,6 +101,10 @@ export default function ShiftCalendar() {
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([]);
+  const [editScope, setEditScope] = useState<'THIS' | 'THIS_AND_FUTURE' | 'ALL'>('THIS');
+  const [deleteScope, setDeleteScope] = useState<'THIS' | 'THIS_AND_FUTURE' | 'ALL'>('THIS');
+  const [seriesEndDate, setSeriesEndDate] = useState('');
+  const [seriesWeekdays, setSeriesWeekdays] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isMobileView, setIsMobileView] = useState(false);
@@ -119,6 +129,21 @@ export default function ShiftCalendar() {
     if (!currentUser || currentUser.role !== 'USER') return false;
     return Number(currentUser.physiotherapistId) === Number(physioId);
   };
+
+  const selectedEventSeriesId = selectedEvent?.extendedProps?.seriesId;
+  const selectedEventBelongsToSeries = Boolean(selectedEventSeriesId);
+  const activeTeamId = useMemo(() => {
+    if (selectedEvent?.extendedProps?.teamId) {
+      return String(selectedEvent.extendedProps.teamId);
+    }
+
+    return viewingTeamId;
+  }, [selectedEvent, viewingTeamId]);
+
+  const activeTeam = useMemo(
+    () => teams.find((team) => team.id === Number(activeTeamId)) ?? null,
+    [activeTeamId, teams]
+  );
 
   const visibleTeams = useMemo(() => {
     if (!currentUser || currentUser.role !== 'USER' || !currentUser.physiotherapistId) {
@@ -223,6 +248,12 @@ export default function ShiftCalendar() {
             physioName: shift.physiotherapist.name,
             slotId: shift.shiftTeamSlotId,
             slotDescription: shift.shiftTeamSlot?.description ?? '',
+            seriesId: shift.shiftSeries?.id ?? null,
+            seriesStartDate: shift.shiftSeries?.startDate ?? null,
+            seriesEndDate: shift.shiftSeries?.endDate ?? null,
+            seriesWeekdays: shift.shiftSeries?.weekdays ?? [],
+            isSeriesException: shift.isSeriesException ?? false,
+            seriesExceptionType: shift.seriesException?.type ?? null,
             canManage: canManageShifts,
             canRequestSwap: canRequestSwapForShift(shift.physiotherapistId),
           },
@@ -289,6 +320,12 @@ export default function ShiftCalendar() {
             physioName: shift.physiotherapist.name,
             slotId: shift.shiftTeamSlotId,
             slotDescription: shift.shiftTeamSlot?.description ?? '',
+            seriesId: shift.shiftSeries?.id ?? null,
+            seriesStartDate: shift.shiftSeries?.startDate ?? null,
+            seriesEndDate: shift.shiftSeries?.endDate ?? null,
+            seriesWeekdays: shift.shiftSeries?.weekdays ?? [],
+            isSeriesException: shift.isSeriesException ?? false,
+            seriesExceptionType: shift.seriesException?.type ?? null,
             canManage: canManageShifts,
             canRequestSwap: canRequestSwapForShift(shift.physiotherapistId),
           },
@@ -347,17 +384,17 @@ export default function ShiftCalendar() {
   }, [events]);
 
   const availablePhysios = useMemo(() => {
-    if (!viewingTeamId) return [];
-    const team = teams.find(t => t.id === parseInt(viewingTeamId));
+    if (!activeTeamId) return [];
+    const team = teams.find(t => t.id === parseInt(activeTeamId));
     if (!team) return [];
     
     // Filtrar fisioterapeutas que pertencem à equipe selecionada (many-to-many)
-    let physios = allPhysiotherapists.filter(p => 
+    const physios = allPhysiotherapists.filter(p => 
       p.teams && p.teams.some((t: any) => t.shiftTeamId === team.id)
     );
 
     return physios;
-  }, [viewingTeamId, allPhysiotherapists, teams]);
+  }, [activeTeamId, allPhysiotherapists, teams]);
 
   const canManageSelectedEvent = useMemo(() => {
     return canManageShifts;
@@ -378,6 +415,32 @@ export default function ShiftCalendar() {
     setShowEditModal(false);
     setSelectedEvent(null);
     setSelectedSlotId('');
+    setEditScope('THIS');
+    setDeleteScope('THIS');
+    setSeriesEndDate('');
+    setSeriesWeekdays([]);
+  };
+
+  const restoreCalendarDate = (date?: Date | null) => {
+    if (!date) {
+      return;
+    }
+
+    setTimeout(() => {
+      if (calendarRef.current) {
+        calendarRef.current.getApi().gotoDate(date);
+      }
+    }, 100);
+  };
+
+  const refreshVisibleCalendar = async (preserveDate?: Date | null) => {
+    if (viewAllTeams) {
+      await fetchAllTeamsShifts();
+    } else if (viewingTeamId) {
+      await fetchShifts(viewingTeamId);
+    }
+
+    restoreCalendarDate(preserveDate);
   };
 
   const handleExportMonthlyPdf = async () => {
@@ -449,6 +512,14 @@ export default function ShiftCalendar() {
     setSelectedPhysioId(clickInfo.event.extendedProps.physioId.toString());
     setSelectedPeriod(clickInfo.event.extendedProps.period);
     setSelectedSlotId(String(clickInfo.event.extendedProps.slotId ?? ''));
+    setEditScope('THIS');
+    setDeleteScope('THIS');
+    setSeriesEndDate(
+      clickInfo.event.extendedProps.seriesEndDate
+        ? new Date(clickInfo.event.extendedProps.seriesEndDate).toISOString().split('T')[0]
+        : clickInfo.event.startStr
+    );
+    setSeriesWeekdays(clickInfo.event.extendedProps.seriesWeekdays ?? []);
     setShowEditModal(true);
   };
 
@@ -469,7 +540,9 @@ export default function ShiftCalendar() {
       toast.warning('Selecione ao menos um dia da semana para a recorrência.');
       return;
     }
+
     try {
+      const currentCalendarDate = calendarRef.current?.getApi().getDate();
       const response = await fetch('/api/shifts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -492,13 +565,11 @@ export default function ShiftCalendar() {
       if (!response.ok) {
         throw new Error(json.error || 'Falha ao salvar o plantão');
       }
-      if (viewAllTeams) {
-        await fetchAllTeamsShifts();
-      } else {
-        await fetchShifts(viewingTeamId);
-      }
+
+      await refreshVisibleCalendar(currentCalendarDate);
       handleCloseModal();
       toast.success(json.message || 'Plantão criado com sucesso');
+
       if (json.summary?.mode === 'RECURRING' && json.summary?.skipped?.length > 0) {
         toast.warning(
           `${json.summary.skipped.length} ocorrência(s) foram puladas por conflito, indisponibilidade ou falta de vaga.`
@@ -511,12 +582,27 @@ export default function ShiftCalendar() {
   };
 
   const handleUpdateShift = async () => {
+    const usingSeriesScope = selectedEventBelongsToSeries ? editScope : 'THIS';
     if (!selectedEvent) return;
     if (!canManageSelectedEvent) {
       toast.error('A alteração de plantões é exclusiva da gestão.');
       return;
     }
+    if (!selectedPhysioId || !selectedSlotId) {
+      toast.warning('Selecione o fisioterapeuta e a vaga para continuar.');
+      return;
+    }
+    if (usingSeriesScope !== 'THIS' && !seriesEndDate) {
+      toast.warning('Informe a data final da série.');
+      return;
+    }
+    if (usingSeriesScope !== 'THIS' && seriesWeekdays.length === 0) {
+      toast.warning('Selecione ao menos um dia da semana para a série.');
+      return;
+    }
+
     try {
+      const currentCalendarDate = calendarRef.current?.getApi().getDate();
       const response = await fetch(`/api/shifts/${selectedEvent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -524,12 +610,29 @@ export default function ShiftCalendar() {
           physiotherapistId: parseInt(selectedPhysioId),
           period: selectedPeriod,
           shiftTeamSlotId: parseInt(selectedSlotId),
+          scope: usingSeriesScope,
+          recurrence:
+            usingSeriesScope !== 'THIS'
+              ? {
+                  endDate: seriesEndDate,
+                  weekdays: seriesWeekdays,
+                }
+              : undefined,
         }),
       });
+
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Falha ao atualizar o plantão');
-      await fetchShifts(viewingTeamId);
+
+      await refreshVisibleCalendar(currentCalendarDate);
       handleCloseEditModal();
+
+      if (json.summary?.skipped?.length > 0) {
+        toast.warning(
+          `${json.summary.skipped.length} ocorrência(s) não puderam ser sincronizadas automaticamente e ficaram como exceção.`
+        );
+      }
+
       toast.success(json.message || 'Plantão atualizado com sucesso');
     } catch (error: any) {
       console.error(error);
@@ -543,14 +646,27 @@ export default function ShiftCalendar() {
       return;
     }
     if (!selectedEvent) return;
-    if (confirm(`Tem certeza que deseja excluir o plantão de ${selectedEvent.title}?`)) {
+
+    const deleteLabel =
+      selectedEventBelongsToSeries && deleteScope === 'ALL'
+        ? 'a série inteira'
+        : selectedEventBelongsToSeries && deleteScope === 'THIS_AND_FUTURE'
+          ? 'este plantão e os próximos da série'
+          : `o plantão de ${selectedEvent.title}`;
+
+    if (confirm(`Tem certeza que deseja excluir ${deleteLabel}?`)) {
       try {
-        const response = await fetch(`/api/shifts/${selectedEvent.id}`, {
-          method: 'DELETE',
-        });
+        const currentCalendarDate = calendarRef.current?.getApi().getDate();
+        const response = await fetch(
+          `/api/shifts/${selectedEvent.id}?scope=${selectedEventBelongsToSeries ? deleteScope : 'THIS'}`,
+          {
+            method: 'DELETE',
+          }
+        );
         const json = await response.json();
         if (!response.ok) throw new Error(json.error || 'Falha ao excluir o plantão');
-        await fetchShifts(viewingTeamId);
+
+        await refreshVisibleCalendar(currentCalendarDate);
         handleCloseEditModal();
         toast.success(json.message || 'Plantão excluído com sucesso');
       } catch (error: any) {
@@ -584,6 +700,7 @@ export default function ShiftCalendar() {
           physiotherapistId: event.extendedProps.physioId,
           period: event.extendedProps.period,
           shiftTeamSlotId: event.extendedProps.slotId,
+          scope: 'THIS',
         }),
       });
       
@@ -596,15 +713,8 @@ export default function ShiftCalendar() {
       } else {
         toast.success('Plantão movido com sucesso');
         // Recarregar os plantões do servidor para garantir sincronização
-        await fetchShifts(viewingTeamId);
-        
-        // Restaurar a data do calendário após recarregar
-        setTimeout(() => {
-          if (currentCalendarDate && calendarRef.current) {
-            calendarRef.current.getApi().gotoDate(currentCalendarDate);
-          }
-        }, 100);
-        
+        await refreshVisibleCalendar(currentCalendarDate);
+
         // Forçar re-render do calendário para atualizar badges
         setRefreshKey(prev => prev + 1);
       }
@@ -735,8 +845,7 @@ export default function ShiftCalendar() {
   };
 
   const hasIntermediateSlots = () => {
-    const team = teams.find(t => t.id === Number(viewingTeamId));
-    return team && (team.weekdayIntermediateSlots > 0 || team.weekendIntermediateSlots > 0);
+    return !!activeTeam && (activeTeam.weekdayIntermediateSlots > 0 || activeTeam.weekendIntermediateSlots > 0);
   };
 
   function getSlotDayType(dateValue: string | Date): ShiftSlotDayType {
@@ -756,10 +865,7 @@ export default function ShiftCalendar() {
   }
 
   const availableSlotOptions = useMemo(() => {
-    if (!viewingTeamId || !selectedDate) return [];
-
-    const team = teams.find((item) => item.id === Number(viewingTeamId));
-    if (!team) return [];
+    if (!activeTeamId || !selectedDate || !activeTeam) return [];
 
     const dayType = getSlotDayType(selectedDate);
     const occupiedSlotIds = new Set(
@@ -767,21 +873,21 @@ export default function ShiftCalendar() {
         .filter((event) => {
           const sameDate = event.start === selectedDate;
           const samePeriod = event.extendedProps?.period === selectedPeriod;
-          const sameTeam = Number(event.extendedProps?.teamId) === Number(viewingTeamId);
+          const sameTeam = Number(event.extendedProps?.teamId) === Number(activeTeamId);
           const differentShift = selectedEvent ? String(event.id) !== String(selectedEvent.id) : true;
           return sameDate && samePeriod && sameTeam && differentShift;
         })
         .map((event) => Number(event.extendedProps?.slotId))
     );
 
-    return (team.shiftSlots ?? [])
+    return (activeTeam.shiftSlots ?? [])
       .filter((slot) => slot.isActive && slot.period === selectedPeriod && slot.dayType === dayType)
       .sort((left, right) => left.sortOrder - right.sortOrder)
       .map((slot) => ({
         ...slot,
         occupied: occupiedSlotIds.has(slot.id),
       }));
-  }, [events, selectedDate, selectedEvent, selectedPeriod, teams, viewingTeamId]);
+  }, [activeTeam, activeTeamId, events, selectedDate, selectedEvent, selectedPeriod]);
 
   useEffect(() => {
     if (availableSlotOptions.length === 0) {
@@ -1332,6 +1438,7 @@ export default function ShiftCalendar() {
             key={`calendar-${viewingTeamId}-${viewAllTeams}-${refreshKey}`}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
+            initialDate={currentMonth}
             weekends={true}
             events={events}
             locale={ptBrLocale}
@@ -1748,6 +1855,153 @@ export default function ShiftCalendar() {
                 </p>
               )}
             </div>
+            {selectedEventBelongsToSeries && (
+              <div className="space-y-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-indigo-900">Série recorrente</p>
+                  <p className="text-sm text-indigo-800">
+                    Este plantão faz parte de uma série. Você pode alterar somente esta ocorrência, este ponto em diante ou a série inteira.
+                  </p>
+                  {selectedEvent?.extendedProps?.isSeriesException && (
+                    <p className="text-sm text-amber-700">
+                      Esta ocorrência já está marcada como exceção da série.
+                    </p>
+                  )}
+                </div>
+
+                {canManageSelectedEvent && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Aplicar alteração em</Label>
+                    <Select
+                      value={editScope}
+                      onValueChange={(value) => setEditScope(value as "THIS" | "THIS_AND_FUTURE" | "ALL")}
+                    >
+                      <SelectTrigger className="h-11 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {seriesScopeOptions.map((option) => (
+                          <SelectItem key={`edit-${option.value}`} value={option.value} className="text-sm">
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-indigo-700">
+                      Use <strong>Somente este plantão</strong> para criar uma exceção pontual. Os outros modos atualizam a série recorrente.
+                    </p>
+                  </div>
+                )}
+
+                {editScope !== "THIS" && (
+                  <div className="space-y-4 rounded-lg border border-white/80 bg-white p-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="series-end-date" className="text-sm font-medium">
+                        Data final da série
+                      </Label>
+                      <input
+                        id="series-end-date"
+                        type="date"
+                        className="form-control"
+                        min={selectedDate}
+                        value={seriesEndDate}
+                        onChange={(event) => setSeriesEndDate(event.target.value)}
+                        disabled={!canManageSelectedEvent}
+                      />
+                      <p className="text-xs text-gray-500">
+                        Se você encurtar a data final, as ocorrências posteriores deixam de fazer parte da série.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Dias da semana da série</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {recurrenceWeekdayOptions.map((weekday) => {
+                          const selected = seriesWeekdays.includes(weekday.value);
+
+                          return (
+                            <button
+                              key={`series-${weekday.value}`}
+                              type="button"
+                              onClick={() =>
+                                setSeriesWeekdays((current) =>
+                                  current.includes(weekday.value)
+                                    ? current.filter((value) => value !== weekday.value)
+                                    : [...current, weekday.value].sort((a, b) => a - b)
+                                )
+                              }
+                              disabled={!canManageSelectedEvent}
+                              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                                selected
+                                  ? "border-indigo-600 bg-indigo-600 text-white"
+                                  : "border-gray-300 bg-white text-gray-700 hover:border-indigo-300 hover:text-indigo-600"
+                              } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              {weekday.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => setSeriesWeekdays(selectedDate ? [new Date(`${selectedDate}T12:00:00`).getDay()] : [])}
+                          disabled={!canManageSelectedEvent}
+                        >
+                          Apenas dia inicial
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => setSeriesWeekdays([1, 2, 3, 4, 5])}
+                          disabled={!canManageSelectedEvent}
+                        >
+                          Seg a sex
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => setSeriesWeekdays([0, 1, 2, 3, 4, 5, 6])}
+                          disabled={!canManageSelectedEvent}
+                        >
+                          Todos os dias
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-gray-500">
+                        Os dias selecionados definem quais datas a série mantém ou recria dentro do intervalo informado.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {canManageSelectedEvent && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Excluir em</Label>
+                    <Select
+                      value={deleteScope}
+                      onValueChange={(value) => setDeleteScope(value as "THIS" | "THIS_AND_FUTURE" | "ALL")}
+                    >
+                      <SelectTrigger className="h-11 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {seriesScopeOptions.map((option) => (
+                          <SelectItem key={`delete-${option.value}`} value={option.value} className="text-sm">
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-indigo-700">
+                      Para exclusões em lote, o sistema considera o mesmo escopo escolhido aqui e preserva o restante da série.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">

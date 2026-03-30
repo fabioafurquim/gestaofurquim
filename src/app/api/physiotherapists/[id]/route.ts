@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth-helpers';
+import { requireAdminOrManager } from '@/lib/auth-helpers';
 import {
   normalizePhysiotherapistTeamAssignments,
   syncPhysiotherapistTeamsByDiff,
@@ -12,6 +12,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const { error } = await requireAdminOrManager();
+  if (error) return error;
+
   const { id: idStr } = await context.params;
   const id = parseInt(idStr, 10);
   if (Number.isNaN(id)) {
@@ -42,7 +45,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { error, user: currentUser } = await requireAuth();
+  const { error, user: currentUser } = await requireAdminOrManager();
   if (error) return error;
 
   const { id: idStr } = await context.params;
@@ -242,7 +245,7 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { error } = await requireAuth();
+  const { error } = await requireAdminOrManager();
   if (error) return error;
 
   const { id: idStr } = await context.params;
@@ -279,13 +282,18 @@ export async function DELETE(
 
     // Se não houver plantões futuros, permitir exclusão
     // Excluir o usuário relacionado se existir
-    const relatedUser = await prisma.user.findFirst({
+    const relatedUsers = await prisma.user.findMany({
       where: { physiotherapistId: id },
+      select: { id: true },
     });
     
-    if (relatedUser) {
-      await prisma.user.delete({
-        where: { id: relatedUser.id },
+    if (relatedUsers.length > 0) {
+      await prisma.user.deleteMany({
+        where: {
+          id: {
+            in: relatedUsers.map((relatedUser) => relatedUser.id),
+          },
+        },
       });
     }
 

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { parseLocalDate } from '@/lib/date-utils';
-
-const prisma = new PrismaClient();
+import { requireAdminOrManager, requireAuth } from '@/lib/auth-helpers';
+import { prisma } from '@/lib/prisma';
 
 // Schema de validação para criação de feriado
 const createHolidaySchema = z.object({
@@ -25,6 +24,9 @@ const updateHolidaySchema = z.object({
  */
 export async function GET() {
   try {
+    const { error } = await requireAuth();
+    if (error) return error;
+
     const holidays = await prisma.holiday.findMany({
       orderBy: {
         date: 'asc'
@@ -46,6 +48,9 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
+    const { error } = await requireAdminOrManager();
+    if (error) return error;
+
     const body = await request.json();
     const validatedData = createHolidaySchema.parse(body);
 

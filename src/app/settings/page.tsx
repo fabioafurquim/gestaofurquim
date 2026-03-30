@@ -483,7 +483,7 @@ export default function SettingsPage() {
                       <ul className="list-disc list-inside space-y-1">
                         <li>Fisioterapeuta solicita troca de plantão</li>
                         <li>Outro fisioterapeuta aceita a troca</li>
-                        <li>Troca fica com status "Aguardando Aprovação"</li>
+                        <li>Troca fica com status &quot;Aguardando Aprovação&quot;</li>
                         <li>Gestor ou Admin aprova/rejeita a troca</li>
                         <li>Se aprovada, a troca é efetivada</li>
                       </ul>

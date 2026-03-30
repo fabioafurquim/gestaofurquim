@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth-helpers';
 import { getAuthUrl, isAuthenticated } from '@/lib/google-drive';
 
 /**
@@ -7,6 +8,9 @@ import { getAuthUrl, isAuthenticated } from '@/lib/google-drive';
  */
 export async function GET() {
   try {
+    const { error } = await requireAdmin();
+    if (error) return error;
+
     const authenticated = isAuthenticated();
     
     if (authenticated) {

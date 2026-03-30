@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireAdminOrManager } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import { isWeekend, parseLocalDate } from '@/lib/date-utils';
 
@@ -8,6 +9,9 @@ import { isWeekend, parseLocalDate } from '@/lib/date-utils';
  */
 export async function POST(request: Request) {
     try {
+        const { error } = await requireAdminOrManager();
+        if (error) return error;
+
         const { date, name } = await request.json();
 
         if (!date) {

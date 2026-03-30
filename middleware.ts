@@ -6,6 +6,24 @@ import { needsInitialSetup } from './src/lib/auth';
 // Rotas públicas da aplicação
 const publicPageRoutes = ['/login', '/setup'];
 
+// Endpoints que precisam ficar públicos por fluxo próprio
+const publicApiRoutes = [
+  '/api/auth/login',
+  '/api/auth/check-setup',
+  '/api/auth/setup',
+  '/api/auth/session',
+  '/api/auth/csrf',
+  '/api/auth/providers',
+  '/api/auth/callback',
+  '/api/auth/signin',
+  '/api/auth/signout',
+  '/api/auth/error',
+  '/api/cron/database-backup',
+  '/api/cron/notify-shifts',
+  '/api/cron/webhook-health',
+  '/api/telegram/webhook',
+];
+
 // Rotas exclusivas de administradores
 const adminOnlyRoutes = [
   '/reports',
@@ -16,6 +34,20 @@ const adminOnlyRoutes = [
   '/settings',
   '/maintenance',
   '/admin',
+];
+
+const adminOnlyApiRoutes = [
+  '/api/users',
+  '/api/contracts',
+  '/api/payments',
+  '/api/payment-control',
+  '/api/reports',
+  '/api/maintenance',
+  '/api/access-logs',
+  '/api/backup-logs',
+  '/api/notifications',
+  '/api/admin',
+  '/api/system-settings',
 ];
 
 // Rotas disponíveis para administradores e gestores
@@ -39,7 +71,11 @@ function isManagerAllowedRoute(pathname: string) {
 }
 
 function isPublicAuthRoute(pathname: string) {
-  return pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+  return publicApiRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+function isAdminOnlyApiRoute(pathname: string) {
+  return adminOnlyApiRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
 export default auth(async function middleware(request: NextAuthRequest) {
@@ -96,6 +132,13 @@ export default auth(async function middleware(request: NextAuthRequest) {
       return NextResponse.json(
         { error: 'Autenticação necessária' },
         { status: 401 }
+      );
+    }
+
+    if (isAdminOnlyApiRoute(pathname) && sessionUser.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Acesso negado. Apenas administradores.' },
+        { status: 403 }
       );
     }
   }

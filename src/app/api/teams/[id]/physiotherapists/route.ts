@@ -26,6 +26,25 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         : session.user.physiotherapistId
       : null;
 
+    if (session.user.role === 'USER') {
+      if (!currentPhysioId) {
+        return NextResponse.json({ error: 'Usuário não vinculado a um fisioterapeuta' }, { status: 403 });
+      }
+
+      const belongsToTeam = await prisma.physiotherapistTeam.findFirst({
+        where: {
+          physiotherapistId: currentPhysioId,
+          shiftTeamId: teamId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!belongsToTeam) {
+        return NextResponse.json({ error: 'Acesso negado a esta equipe' }, { status: 403 });
+      }
+    }
+
     const physios = await prisma.physiotherapistTeam.findMany({
       where: {
         shiftTeamId: teamId,
