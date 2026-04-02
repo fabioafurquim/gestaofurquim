@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { format } from 'date-fns';
@@ -106,7 +106,7 @@ export default function FinancialReportClient({
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-gray-800">Relatório Financeiro</h1>
                 <Link
-                    href="/reports"
+                    href="/financial-closing"
                     className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
                 >
                     Voltar

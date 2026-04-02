@@ -56,6 +56,7 @@ const managerAllowedRoutes = [
   '/teams',
   '/holidays',
   '/shift-deletion-history',
+  '/financial-closing',
 ];
 
 function isPublicPage(pathname: string) {

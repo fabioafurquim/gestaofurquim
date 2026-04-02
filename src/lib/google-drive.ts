@@ -41,10 +41,27 @@ type GoogleCredentials = {
   redirect_uris: string[];
 };
 
-interface DriveUploadResult {
+export interface DriveUploadResult {
   fileId: string;
   fileName: string;
   webViewLink: string;
+  folderId?: string;
+  folderPath?: string[];
+}
+
+export interface DriveFolderResolution {
+  folderId: string;
+  folderPath: string[];
+}
+
+export interface DriveFileInfo {
+  fileId: string;
+  fileName: string;
+  webViewLink: string;
+  mimeType?: string | null;
+  size?: string | null;
+  createdTime?: string | null;
+  modifiedTime?: string | null;
 }
 
 function decodeJsonEnv(value: string) {
@@ -277,17 +294,67 @@ async function getOrCreateFolder(
   return folder.data.id!;
 }
 
-export async function ensureDriveFolderPath(folderNames: string[]): Promise<string> {
+async function resolveDriveFolderPath(
+  folderNames: string[],
+  createIfMissing: boolean
+): Promise<DriveFolderResolution | null> {
   const auth = await getAuthenticatedClient();
   const drive = google.drive({ version: 'v3', auth });
 
   let parentId: string | undefined;
+  const resolvedPath: string[] = [];
 
   for (const folderName of folderNames) {
+    resolvedPath.push(folderName);
+
+    let query = `name='${folderName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+
+    if (parentId) {
+      query += ` and '${parentId}' in parents`;
+    }
+
+    const response = await drive.files.list({
+      q: query,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+    });
+
+    const existingFolder = response.data.files?.[0];
+
+    if (existingFolder?.id) {
+      parentId = existingFolder.id;
+      continue;
+    }
+
+    if (!createIfMissing) {
+      return null;
+    }
+
     parentId = await getOrCreateFolder(drive, folderName, parentId);
   }
 
-  return parentId!;
+  if (!parentId) {
+    return null;
+  }
+
+  return {
+    folderId: parentId,
+    folderPath: resolvedPath,
+  };
+}
+
+export async function ensureDriveFolderPath(folderNames: string[]): Promise<string> {
+  const resolution = await resolveDriveFolderPath(folderNames, true);
+
+  if (!resolution) {
+    throw new Error('Nao foi possivel resolver a pasta do Drive.');
+  }
+
+  return resolution.folderId;
+}
+
+export async function findDriveFolderPath(folderNames: string[]): Promise<DriveFolderResolution | null> {
+  return resolveDriveFolderPath(folderNames, false);
 }
 
 export async function uploadBufferToDrive(
@@ -298,12 +365,16 @@ export async function uploadBufferToDrive(
 ): Promise<DriveUploadResult> {
   const auth = await getAuthenticatedClient();
   const drive = google.drive({ version: 'v3', auth });
-  const folderId = await ensureDriveFolderPath(folderNames);
+  const folderResolution = await resolveDriveFolderPath(folderNames, true);
+
+  if (!folderResolution) {
+    throw new Error('Nao foi possivel criar a pasta no Drive.');
+  }
 
   const response = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [folderId],
+      parents: [folderResolution.folderId],
     },
     media: {
       mimeType,
@@ -316,7 +387,36 @@ export async function uploadBufferToDrive(
     fileId: response.data.id!,
     fileName: response.data.name!,
     webViewLink: response.data.webViewLink || '',
+    folderId: folderResolution.folderId,
+    folderPath: folderResolution.folderPath,
   };
+}
+
+export async function listFilesInDriveFolder(folderNames: string[]): Promise<DriveFileInfo[]> {
+  const folderResolution = await findDriveFolderPath(folderNames);
+
+  if (!folderResolution) {
+    return [];
+  }
+
+  const auth = await getAuthenticatedClient();
+  const drive = google.drive({ version: 'v3', auth });
+
+  const response = await drive.files.list({
+    q: `'${folderResolution.folderId}' in parents and trashed=false`,
+    fields: 'files(id, name, webViewLink, mimeType, size, createdTime, modifiedTime)',
+    spaces: 'drive',
+  });
+
+  return (response.data.files || []).map((file) => ({
+    fileId: file.id || '',
+    fileName: file.name || '',
+    webViewLink: file.webViewLink || '',
+    mimeType: file.mimeType || null,
+    size: file.size || null,
+    createdTime: file.createdTime || null,
+    modifiedTime: file.modifiedTime || null,
+  })).filter((file) => Boolean(file.fileId));
 }
 
 async function ensurePaymentFolderStructure(

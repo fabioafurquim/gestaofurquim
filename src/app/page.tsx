@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -207,27 +207,16 @@ export default function DashboardPage() {
                 </div>
               </Link>
 
-              <Link href="/reports/financial" className="flex items-center gap-3 rounded-lg bg-emerald-50 p-3 transition-colors hover:bg-emerald-100">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Relatórios</p>
-                  <p className="text-xs text-gray-500">Ver relatório financeiro</p>
-                </div>
-              </Link>
 
-              <Link href="/payment-control" className="flex items-center gap-3 rounded-lg bg-amber-50 p-3 transition-colors hover:bg-amber-100">
+              <Link href="/financial-closing" className="flex items-center gap-3 rounded-lg bg-amber-50 p-3 transition-colors hover:bg-amber-100">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-600">
                   <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">Folha de Pagamento</p>
-                  <p className="text-xs text-gray-500">Gerar folha mensal</p>
+                  <p className="font-medium text-gray-900">Fechamento Financeiro</p>
+                  <p className="text-xs text-gray-500">Fechamento, relatórios e documentos</p>
                 </div>
               </Link>
             </div>
@@ -294,3 +283,6 @@ export default function DashboardPage() {
     </AuthLayout>
   );
 }
+
+
+

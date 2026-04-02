@@ -39,6 +39,8 @@ model Physiotherapist {
   shifts           Shift[]
   users            User[]                @relation("UserPhysiotherapist") // Um fisioterapeuta pode ter múltiplos usuários
   paymentRecords   PaymentRecord[]       @relation("PaymentRecords")
+  financialClosingLines FinancialClosingLine[]
+  financialDocuments FinancialDocument[]
   swapRequests     ShiftSwapRequest[]    @relation("SwapRequester") // Trocas solicitadas
   swapTargets      ShiftSwapRequest[]    @relation("SwapTarget") // Trocas direcionadas a este fisio
   swapResponses    ShiftSwapRequest[]    @relation("SwapResponder") // Trocas respondidas
@@ -201,6 +203,14 @@ model User {
   updatedTeamPriceChanges                ShiftTeamPriceHistory[]           @relation("PriceUpdateUser")
   updatedPhysiotherapistTeamPriceChanges PhysiotherapistTeamPriceHistory[] @relation("CustomPriceUpdateUser")
   accessLogs                             UserAccessLog[]
+  financialClosingsCreated               FinancialClosing[]                @relation("FinancialClosingCreatedBy")
+  financialClosingsApproved              FinancialClosing[]                @relation("FinancialClosingApprovedBy")
+  financialClosingLinesCreated           FinancialClosingLine[]             @relation("FinancialClosingLineCreatedBy")
+  financialClosingLinesUpdated           FinancialClosingLine[]             @relation("FinancialClosingLineUpdatedBy")
+  financialAdjustmentsCreated            FinancialAdjustment[]             @relation("FinancialAdjustmentCreatedBy")
+  financialDocumentsUploaded             FinancialDocument[]               @relation("FinancialDocumentUploadedBy")
+  financialAuditEvents                   FinancialAuditEvent[]             @relation("FinancialAuditActor")
+  financialBatchesCreated                PaymentBatch[]                    @relation("PaymentBatchCreatedBy")
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam
@@ -466,6 +476,261 @@ enum EmailStatus {
   PENDING
   SENT
   FAILED
+}
+
+// ==========================================
+// MÓDULO FINANCEIRO UNIFICADO
+// ==========================================
+
+enum FinancialClosingStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED_FOR_PAYMENT
+  BANK_FILE_GENERATED
+  BANK_SUBMITTED
+  PAYMENT_CONFIRMED
+  CLOSED
+  REOPENED
+  ARCHIVED
+}
+
+enum FinancialClosingLineStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  LOCKED
+  PAID
+  CANCELLED
+}
+
+enum FinancialAdjustmentType {
+  BONUS
+  CREDIT
+  DEBIT
+  DISCOUNT
+  CORRECTION
+  OTHER
+}
+
+enum FinancialDocumentType {
+  RPA
+  INVOICE
+  PIX_RECEIPT
+  BANK_FILE
+  BANK_RETURN
+  EMAIL_RECEIPT
+  OTHER
+}
+
+enum FinancialDocumentStatus {
+  PENDING
+  AVAILABLE
+  ARCHIVED
+  INVALID
+}
+
+enum FinancialAuditEventType {
+  SNAPSHOT_CREATED
+  LINE_CREATED
+  ADJUSTMENT_CREATED
+  DOCUMENT_REGISTERED
+  BATCH_CREATED
+  BATCH_GENERATED
+  STATUS_CHANGED
+  PAYMENT_CONFIRMED
+  REOPENED
+  AUDIT_NOTE
+}
+
+enum PaymentBatchStatus {
+  DRAFT
+  READY
+  GENERATED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
+model FinancialClosing {
+  id                    Int                    @id @default(autoincrement())
+  referenceMonth        String                 @unique
+  year                  Int
+  month                 Int
+  status                FinancialClosingStatus @default(DRAFT)
+  snapshotVersion       Int                    @default(1)
+  totalPhysiotherapists Int                    @default(0)
+  totalShifts           Int                    @default(0)
+  totalGrossValue       Decimal                @default(0) @db.Decimal(12, 2)
+  totalAdjustmentValue  Decimal                @default(0) @db.Decimal(12, 2)
+  totalNetValue         Decimal                @default(0) @db.Decimal(12, 2)
+  sourceChecksum        String?
+  notes                 String?
+  snapshotData          Json?
+  generatedAt           DateTime?
+  lockedAt              DateTime?
+  approvedAt            DateTime?
+  closedAt              DateTime?
+  reopenedAt            DateTime?
+  createdBy             Int?
+  approvedBy            Int?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  createdByUser         User?                  @relation("FinancialClosingCreatedBy", fields: [createdBy], references: [id])
+  approvedByUser        User?                  @relation("FinancialClosingApprovedBy", fields: [approvedBy], references: [id])
+  lines                 FinancialClosingLine[]
+  adjustments           FinancialAdjustment[]
+  documents             FinancialDocument[]
+  auditEvents           FinancialAuditEvent[]
+  paymentBatches        PaymentBatch[]
+
+  @@index([status, referenceMonth])
+  @@index([year, month])
+}
+
+model FinancialClosingLine {
+  id                    Int                        @id @default(autoincrement())
+  financialClosingId    Int
+  physiotherapistId     Int
+  primaryTeamId         Int?
+  primaryTeamName       String?
+  physiotherapistName   String
+  physiotherapistEmail  String?
+  contractType          ContractType
+  totalShifts           Int                        @default(0)
+  grossCalculatedValue  Decimal                    @db.Decimal(12, 2)
+  adjustmentTotalValue  Decimal                    @default(0) @db.Decimal(12, 2)
+  netValue              Decimal                    @db.Decimal(12, 2)
+  additionalValue       Decimal                    @default(0) @db.Decimal(12, 2)
+  status                FinancialClosingLineStatus @default(DRAFT)
+  calculationSnapshot   Json?
+  shiftDetailsSnapshot  Json?
+  teamBreakdownSnapshot  Json?
+  lockedAt              DateTime?
+  approvedAt            DateTime?
+  paidAt                DateTime?
+  paymentBatchId        Int?
+  createdBy             Int?
+  updatedBy             Int?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  financialClosing      FinancialClosing           @relation(fields: [financialClosingId], references: [id], onDelete: Cascade)
+  physiotherapist       Physiotherapist            @relation(fields: [physiotherapistId], references: [id], onDelete: Restrict)
+  paymentBatch          PaymentBatch?              @relation(fields: [paymentBatchId], references: [id], onDelete: SetNull)
+  createdByUser         User?                      @relation("FinancialClosingLineCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser         User?                      @relation("FinancialClosingLineUpdatedBy", fields: [updatedBy], references: [id])
+  adjustments           FinancialAdjustment[]
+  documents             FinancialDocument[]
+  auditEvents           FinancialAuditEvent[]
+
+  @@unique([financialClosingId, physiotherapistId])
+  @@index([financialClosingId, status])
+  @@index([physiotherapistId, financialClosingId])
+}
+
+model FinancialAdjustment {
+  id                    Int                    @id @default(autoincrement())
+  financialClosingId    Int
+  financialClosingLineId Int?
+  type                  FinancialAdjustmentType
+  amount                Decimal                @db.Decimal(12, 2)
+  reason                String
+  description           String?
+  source                String                 @default("MANUAL")
+  createdBy             Int?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  financialClosing      FinancialClosing       @relation(fields: [financialClosingId], references: [id], onDelete: Cascade)
+  financialClosingLine  FinancialClosingLine?   @relation(fields: [financialClosingLineId], references: [id], onDelete: SetNull)
+  createdByUser         User?                  @relation("FinancialAdjustmentCreatedBy", fields: [createdBy], references: [id])
+  auditEvents           FinancialAuditEvent[]
+
+  @@index([financialClosingId, type])
+  @@index([financialClosingLineId])
+}
+
+model FinancialDocument {
+  id                    Int                    @id @default(autoincrement())
+  financialClosingId    Int
+  financialClosingLineId Int?
+  physiotherapistId     Int?
+  type                  FinancialDocumentType
+  status                FinancialDocumentStatus @default(PENDING)
+  provider              String                 @default("GOOGLE_DRIVE")
+  fileName              String
+  fileId                String?
+  fileUrl               String?
+  mimeType              String?
+  fileHash              String?
+  folderPath            String?
+  referenceMonth        String
+  metadata              Json?
+  extractedData         Json?
+  uploadedBy            Int?
+  uploadedAt            DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  financialClosing      FinancialClosing       @relation(fields: [financialClosingId], references: [id], onDelete: Cascade)
+  financialClosingLine  FinancialClosingLine?   @relation(fields: [financialClosingLineId], references: [id], onDelete: SetNull)
+  physiotherapist       Physiotherapist?       @relation(fields: [physiotherapistId], references: [id], onDelete: SetNull)
+  uploadedByUser        User?                  @relation("FinancialDocumentUploadedBy", fields: [uploadedBy], references: [id])
+  auditEvents           FinancialAuditEvent[]
+
+  @@index([financialClosingId, type])
+  @@index([physiotherapistId, type])
+  @@index([referenceMonth, type])
+}
+
+model FinancialAuditEvent {
+  id                    Int                    @id @default(autoincrement())
+  financialClosingId    Int
+  financialClosingLineId Int?
+  financialAdjustmentId Int?
+  financialDocumentId   Int?
+  paymentBatchId        Int?
+  type                  FinancialAuditEventType
+  actorUserId           Int?
+  actorName             String?
+  message               String?
+  details               Json?
+  createdAt             DateTime               @default(now())
+  financialClosing      FinancialClosing       @relation(fields: [financialClosingId], references: [id], onDelete: Cascade)
+  financialClosingLine  FinancialClosingLine?   @relation(fields: [financialClosingLineId], references: [id], onDelete: SetNull)
+  financialAdjustment   FinancialAdjustment?    @relation(fields: [financialAdjustmentId], references: [id], onDelete: SetNull)
+  financialDocument     FinancialDocument?      @relation(fields: [financialDocumentId], references: [id], onDelete: SetNull)
+  paymentBatch          PaymentBatch?           @relation(fields: [paymentBatchId], references: [id], onDelete: SetNull)
+  actorUser             User?                  @relation("FinancialAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([financialClosingId, createdAt])
+  @@index([type, createdAt])
+}
+
+model PaymentBatch {
+  id                    Int                    @id @default(autoincrement())
+  financialClosingId    Int
+  provider              String                 @default("BANCO_INTER")
+  status                PaymentBatchStatus     @default(DRAFT)
+  batchNumber           String?
+  fileName              String?
+  fileId                String?
+  fileHash              String?
+  recordCount           Int                    @default(0)
+  totalValue            Decimal                @default(0) @db.Decimal(12, 2)
+  payload               Json?
+  generatedAt           DateTime?
+  sentAt                DateTime?
+  confirmedAt           DateTime?
+  returnedAt            DateTime?
+  createdBy             Int?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  financialClosing      FinancialClosing       @relation(fields: [financialClosingId], references: [id], onDelete: Cascade)
+  createdByUser         User?                  @relation("PaymentBatchCreatedBy", fields: [createdBy], references: [id])
+  auditEvents           FinancialAuditEvent[]
+  lines                 FinancialClosingLine[]
+
+  @@index([financialClosingId, status])
+  @@index([provider, status])
 }
 
 // ==========================================
