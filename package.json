@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx prisma generate && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
+    "build": "node --max-old-space-size=2048 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "verificar": "npm run db:generate && npm run typecheck && npm run lint",
     "db:studio": "npx prisma studio",
     "db:migrate": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
