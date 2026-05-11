@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { signOut } from 'next-auth/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -33,6 +32,14 @@ export default function IdleSessionManager() {
   const [warningOpen, setWarningOpen] = useState(false);
   const [remainingMs, setRemainingMs] = useState(WARNING_WINDOW_MS);
   const channelRef = useRef<BroadcastChannel | null>(null);
+
+  const logoutUser = useCallback(async (callbackUrl = '/login') => {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+    }).catch(() => null);
+    router.push(callbackUrl);
+    router.refresh();
+  }, [router]);
 
   useEffect(() => {
     const now = Date.now();
@@ -85,9 +92,7 @@ export default function IdleSessionManager() {
       if (remaining <= 0) {
         localStorage.removeItem(STORAGE_KEY);
         setWarningOpen(false);
-        await signOut({ redirect: false });
-        router.push(`/login?reason=expired&redirect=${encodeURIComponent(pathname || '/')}`);
-        router.refresh();
+        await logoutUser(`/login?reason=expired&redirect=${encodeURIComponent(pathname || '/')}`);
         return;
       }
 
@@ -121,7 +126,7 @@ export default function IdleSessionManager() {
       }
       window.clearInterval(interval);
     };
-  }, [pathname, router]);
+  }, [logoutUser, pathname]);
 
   if (!warningOpen) {
     return null;
@@ -140,7 +145,7 @@ export default function IdleSessionManager() {
         <div className="mt-5 flex items-center justify-end gap-3">
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: '/login' })}
+            onClick={() => logoutUser('/login')}
             className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
           >
             Sair agora

@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { hashPassword, generateDefaultPassword } from '@/lib/auth';
-import { auth } from '@/auth';
 
-/**
- * POST /api/users/[id]/reset-password
- * Reseta a senha de um usuário (apenas para administradores)
- */
+import { auth } from '@/auth';
+import { generateDefaultPassword, hashPassword } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
@@ -18,21 +15,16 @@ export async function POST(
     if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas administradores podem resetar senhas.' },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
-    // Converte o id para inteiro
     const userId = parseInt(id, 10);
 
-    if (isNaN(userId)) {
-      return NextResponse.json(
-        { error: 'ID de usuário inválido' },
-        { status: 400 }
-      );
+    if (Number.isNaN(userId)) {
+      return NextResponse.json({ error: 'ID de usuário inválido.' }, { status: 400 });
     }
 
-    // Verifica se o usuário existe
     const existingUser = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -43,29 +35,29 @@ export async function POST(
     });
 
     if (!existingUser) {
-      return NextResponse.json(
-        { error: 'Usuário não encontrado' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
     }
 
-    // Gera uma nova senha padrão
     const newPassword = generateDefaultPassword();
     const hashedPassword = await hashPassword(newPassword);
 
-    // Atualiza a senha do usuário e marca para trocar na próxima entrada
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        password: hashedPassword,
-        mustChangePassword: true,
-        isFirstLogin: false, // Não é mais primeiro login, mas deve trocar a senha
-      },
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          password: hashedPassword,
+          mustChangePassword: true,
+          isFirstLogin: false,
+        },
+      }),
+      prisma.trustedTwoFactorDevice.deleteMany({
+        where: { userId },
+      }),
+    ]);
 
     return NextResponse.json({
-      message: 'Senha resetada com sucesso',
-      newPassword, // Retorna a nova senha para o administrador informar ao usuário
+      message: 'Senha resetada com sucesso.',
+      newPassword,
       user: {
         id: existingUser.id,
         name: existingUser.name,
@@ -74,9 +66,6 @@ export async function POST(
     });
   } catch (error) {
     console.error('Erro ao resetar senha:', error);
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Erro interno do servidor.' }, { status: 500 });
   }
 }

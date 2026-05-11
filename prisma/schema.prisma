@@ -190,6 +190,10 @@ model User {
   role                                   UserRole                          @default(USER)
   isFirstLogin                           Boolean                           @default(true)
   mustChangePassword                     Boolean                           @default(true)
+  twoFactorEnabled                       Boolean                           @default(false)
+  twoFactorSecretEncrypted               String?
+  twoFactorRecoveryCodeHashes            String[]                          @default([])
+  twoFactorEnabledAt                     DateTime?
   physiotherapistId                      Int?
   createdAt                              DateTime                          @default(now())
   updatedAt                              DateTime                          @updatedAt
@@ -211,6 +215,23 @@ model User {
   financialDocumentsUploaded             FinancialDocument[]               @relation("FinancialDocumentUploadedBy")
   financialAuditEvents                   FinancialAuditEvent[]             @relation("FinancialAuditActor")
   financialBatchesCreated                PaymentBatch[]                    @relation("PaymentBatchCreatedBy")
+  trustedTwoFactorDevices                TrustedTwoFactorDevice[]
+}
+
+model TrustedTwoFactorDevice {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  tokenHash  String   @unique
+  label      String?
+  ipAddress  String?
+  userAgent  String?
+  lastUsedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 // Modelo de junção para relação many-to-many entre Physiotherapist e ShiftTeam

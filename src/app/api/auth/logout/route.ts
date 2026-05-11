@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { signOut } from '@/auth';
+import { clearTwoFactorCookies } from '@/lib/two-factor';
 
 /**
  * POST /api/auth/logout
@@ -12,10 +13,14 @@ export async function POST() {
       redirectTo: '/login',
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'Logout realizado com sucesso',
       redirectTo: '/login',
     });
+
+    clearTwoFactorCookies(response);
+
+    return response;
   } catch (error) {
     console.error('Erro no logout:', error);
 
