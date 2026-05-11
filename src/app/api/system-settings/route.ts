@@ -1,41 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
+
 import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
 
 const updateSettingsSchema = z.object({
   swapRequiresApproval: z.boolean(),
 });
 
+function serializeSystemSettings(settings: {
+  id: number;
+  swapRequiresApproval: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: settings.id,
+    swapRequiresApproval: settings.swapRequiresApproval,
+    createdAt: settings.createdAt,
+    updatedAt: settings.updatedAt,
+  };
+}
+
+async function ensureSystemSettings() {
+  let settings = await prisma.systemSettings.findFirst({
+    select: {
+      id: true,
+      swapRequiresApproval: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!settings) {
+    settings = await prisma.systemSettings.create({
+      data: {
+        swapRequiresApproval: true,
+      },
+      select: {
+        id: true,
+        swapRequiresApproval: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  return settings;
+}
+
 /**
  * GET /api/system-settings
- * Retorna as configurações do sistema
+ * Retorna apenas as configuracoes publicas e seguras do sistema.
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 
     if (!session?.user) {
       return NextResponse.json(
-        { error: 'Não autenticado' },
+        { error: 'Nao autenticado' },
         { status: 401 }
       );
     }
 
-    // Busca ou cria as configurações
-    let settings = await prisma.systemSettings.findFirst();
+    const settings = await ensureSystemSettings();
 
-    if (!settings) {
-      settings = await prisma.systemSettings.create({
-        data: {
-          swapRequiresApproval: true,
-        },
-      });
-    }
-
-    return NextResponse.json(settings);
+    return NextResponse.json(serializeSystemSettings(settings));
   } catch (error) {
-    console.error('Erro ao buscar configurações:', error);
+    console.error('Erro ao buscar configuracoes:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }
@@ -45,7 +78,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * PATCH /api/system-settings
- * Atualiza as configurações do sistema (apenas ADMIN)
+ * Atualiza as configuracoes publicas do sistema (apenas ADMIN).
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -53,35 +86,33 @@ export async function PATCH(request: NextRequest) {
 
     if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas administradores podem alterar configurações.' },
+        { error: 'Acesso negado. Apenas administradores podem alterar configuracoes.' },
         { status: 403 }
       );
     }
 
     const body = await request.json();
     const validatedData = updateSettingsSchema.parse(body);
+    const settings = await ensureSystemSettings();
 
-    // Busca ou cria as configurações
-    let settings = await prisma.systemSettings.findFirst();
+    const updatedSettings = await prisma.systemSettings.update({
+      where: { id: settings.id },
+      data: validatedData,
+      select: {
+        id: true,
+        swapRequiresApproval: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-    if (!settings) {
-      settings = await prisma.systemSettings.create({
-        data: validatedData,
-      });
-    } else {
-      settings = await prisma.systemSettings.update({
-        where: { id: settings.id },
-        data: validatedData,
-      });
-    }
-
-    return NextResponse.json(settings);
+    return NextResponse.json(serializeSystemSettings(updatedSettings));
   } catch (error) {
-    console.error('Erro ao atualizar configurações:', error);
+    console.error('Erro ao atualizar configuracoes:', error);
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Dados inválidos', details: error.errors },
+        { error: 'Dados invalidos', details: error.errors },
         { status: 400 }
       );
     }

@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    if (!isAuthenticated()) {
+    if (!(await isAuthenticated())) {
       return NextResponse.json(
         { error: 'Google Drive não está autenticado para receber backups automáticos.' },
         { status: 500 }

@@ -21,7 +21,7 @@ export async function POST(
       );
     }
 
-    if (!isAuthenticated()) {
+    if (!(await isAuthenticated())) {
       return NextResponse.json(
         { error: 'Google Drive não está autenticado. Configure a integração primeiro.' },
         { status: 401 }

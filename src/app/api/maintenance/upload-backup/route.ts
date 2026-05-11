@@ -8,7 +8,7 @@ export async function POST() {
   const { error, user } = await requireAdmin();
   if (error) return error;
 
-  if (!isAuthenticated()) {
+  if (!(await isAuthenticated())) {
     return NextResponse.json(
       { error: 'Google Drive não está autenticado. Configure a integração antes de enviar backups.' },
       { status: 400 }

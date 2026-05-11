@@ -247,6 +247,8 @@ model Holiday {
 model SystemSettings {
   id                   Int      @id @default(autoincrement())
   swapRequiresApproval Boolean  @default(true) // Se trocas precisam de aprovação de gestor/admin
+  googleTokenEncrypted String?
+  googleTokenUpdatedAt DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }

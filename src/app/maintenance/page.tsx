@@ -25,6 +25,9 @@ type MessageState = {
 type GoogleAuthState = {
   authenticated: boolean;
   authUrl?: string;
+  message?: string;
+  reauthRequired?: boolean;
+  tokenUpdatedAt?: string | null;
 };
 
 type BackupLog = {
@@ -111,10 +114,25 @@ export default function MaintenancePage() {
       return;
     }
 
-    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab');
+    const success = params.get('success');
+    const error = params.get('error');
 
     if (requestedTab === 'backup' || requestedTab === 'backup-logs' || requestedTab === 'access-logs') {
       setActiveTab(requestedTab);
+    }
+
+    if (success) {
+      setMessage({
+        type: 'success',
+        text: success,
+      });
+    } else if (error) {
+      setMessage({
+        type: 'error',
+        text: error,
+      });
     }
   }, []);
 

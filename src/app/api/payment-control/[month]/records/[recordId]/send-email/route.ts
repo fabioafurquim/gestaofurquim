@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Verifica autenticação do Google
-    if (!isAuthenticated()) {
+    if (!(await isAuthenticated())) {
       return NextResponse.json(
         { error: 'Google não autenticado. Configure a autenticação primeiro.' },
         { status: 401 }

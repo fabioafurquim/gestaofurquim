@@ -1,36 +1,24 @@
 import { NextResponse } from 'next/server';
+
 import { requireAdmin } from '@/lib/auth-helpers';
-import { getAuthUrl, isAuthenticated } from '@/lib/google-drive';
+import { getGoogleAuthStatus } from '@/lib/google-drive';
 
 /**
  * GET /api/auth/google
- * Retorna a URL de autenticação do Google ou status de autenticação
+ * Retorna o status atual da integracao e a URL de autenticacao/reautenticacao.
  */
 export async function GET() {
   try {
     const { error } = await requireAdmin();
     if (error) return error;
 
-    const authenticated = isAuthenticated();
-    
-    if (authenticated) {
-      return NextResponse.json({
-        authenticated: true,
-        message: 'Google já está autenticado',
-      });
-    }
+    const status = await getGoogleAuthStatus('/maintenance?tab=backup');
 
-    const authUrl = getAuthUrl();
-    
-    return NextResponse.json({
-      authenticated: false,
-      authUrl,
-      message: 'Acesse a URL para autenticar com o Google',
-    });
+    return NextResponse.json(status);
   } catch (error) {
-    console.error('Erro ao gerar URL de autenticação:', error);
+    console.error('Erro ao verificar autenticacao do Google:', error);
     return NextResponse.json(
-      { error: 'Erro ao gerar URL de autenticação' },
+      { error: 'Erro ao verificar autenticacao do Google.' },
       { status: 500 }
     );
   }

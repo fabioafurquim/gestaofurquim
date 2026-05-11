@@ -1,13 +1,23 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
+
+import { OAuth2Client } from 'google-auth-library';
+import { google } from 'googleapis';
+
+import {
+  clearGoogleTokenFromDatabase,
+  getGoogleTokenUpdatedAt,
+  loadGoogleTokenFromDatabase,
+  saveGoogleTokenToDatabase,
+  type GoogleTokenShape,
+} from '@/lib/google-auth-storage';
 
 const CREDENTIALS_PATH = path.join(process.cwd(), 'google-credentials.json');
 const TOKEN_PATH = path.join(process.cwd(), 'google-token.json');
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+const DEFAULT_RETURN_TO = '/maintenance?tab=backup';
 const REDIRECT_URI = `${BASE_URL}/api/auth/google/callback`;
 
 const SCOPES = [
@@ -28,18 +38,28 @@ type GoogleCredentialsShape = {
   };
 };
 
-type GoogleTokenShape = {
-  access_token?: string;
-  refresh_token?: string;
-  token_type?: string;
-  expiry_date?: number;
-};
-
 type GoogleCredentials = {
   client_id: string;
   client_secret: string;
   redirect_uris: string[];
 };
+
+type TokenSource = 'database' | 'environment' | 'file';
+
+type GoogleTokenCandidate = {
+  token: GoogleTokenShape;
+  source: TokenSource;
+};
+
+function normalizeGoogleToken(token: GoogleTokenShape): GoogleTokenShape {
+  return {
+    access_token: token.access_token ?? undefined,
+    refresh_token: token.refresh_token ?? undefined,
+    token_type: token.token_type ?? undefined,
+    expiry_date: token.expiry_date ?? undefined,
+    scope: token.scope ?? undefined,
+  };
+}
 
 export interface DriveUploadResult {
   fileId: string;
@@ -64,6 +84,14 @@ export interface DriveFileInfo {
   modifiedTime?: string | null;
 }
 
+export interface GoogleAuthStatus {
+  authenticated: boolean;
+  authUrl: string;
+  message: string;
+  reauthRequired: boolean;
+  tokenUpdatedAt: string | null;
+}
+
 function decodeJsonEnv(value: string) {
   const trimmed = value.trim();
 
@@ -85,7 +113,7 @@ function readJsonFromEnv<T>(envNames: string[]): T | null {
     try {
       return JSON.parse(decodeJsonEnv(rawValue)) as T;
     } catch (error) {
-      throw new Error(`Variável ${envName} inválida. Verifique o JSON informado.`);
+      throw new Error(`Variavel ${envName} invalida. Verifique o JSON informado.`);
     }
   }
 
@@ -102,7 +130,7 @@ function loadCredentials(): GoogleCredentials {
     const credentials = envCredentials.installed || envCredentials.web;
 
     if (!credentials?.client_id || !credentials.client_secret) {
-      throw new Error('Credenciais Google inválidas nas variáveis de ambiente.');
+      throw new Error('Credenciais Google invalidas nas variaveis de ambiente.');
     }
 
     return {
@@ -126,7 +154,7 @@ function loadCredentials(): GoogleCredentials {
     const parsed = credentials.installed || credentials.web;
 
     if (!parsed?.client_id || !parsed.client_secret) {
-      throw new Error('Arquivo de credenciais do Google inválido.');
+      throw new Error('Arquivo de credenciais do Google invalido.');
     }
 
     return {
@@ -134,23 +162,21 @@ function loadCredentials(): GoogleCredentials {
       client_secret: parsed.client_secret,
       redirect_uris: parsed.redirect_uris || [REDIRECT_URI],
     };
-  } catch (error) {
+  } catch {
     throw new Error(
-      'Credenciais do Google não encontradas. Configure GOOGLE_CREDENTIALS_JSON/GOOGLE_CLIENT_ID no ambiente ou mantenha google-credentials.json local.'
+      'Credenciais do Google nao encontradas. Configure GOOGLE_CREDENTIALS_JSON/GOOGLE_CLIENT_ID no ambiente ou mantenha google-credentials.json local.'
     );
   }
 }
 
-function loadToken(): GoogleTokenShape | null {
-  const envToken = readJsonFromEnv<GoogleTokenShape>([
+function loadTokenFromEnv(): GoogleTokenShape | null {
+  return readJsonFromEnv<GoogleTokenShape>([
     'GOOGLE_TOKEN_JSON',
     'GOOGLE_TOKEN_JSON_BASE64',
   ]);
+}
 
-  if (envToken) {
-    return envToken;
-  }
-
+function loadTokenFromFile(): GoogleTokenShape | null {
   try {
     const content = fs.readFileSync(TOKEN_PATH, 'utf-8');
     return JSON.parse(content) as GoogleTokenShape;
@@ -159,30 +185,70 @@ function loadToken(): GoogleTokenShape | null {
   }
 }
 
-function canPersistTokenToFile() {
-  return !process.env.GOOGLE_TOKEN_JSON && !process.env.GOOGLE_TOKEN_JSON_BASE64;
+function hasEmbeddedGoogleToken() {
+  return Boolean(process.env.GOOGLE_TOKEN_JSON || process.env.GOOGLE_TOKEN_JSON_BASE64);
 }
 
-function saveToken(token: object): void {
-  if (!canPersistTokenToFile()) {
-    console.warn('Token do Google veio por variável de ambiente; atualização não será persistida em arquivo.');
+function saveTokenToFile(token: GoogleTokenShape): void {
+  if (hasEmbeddedGoogleToken()) {
     return;
   }
 
   fs.writeFileSync(TOKEN_PATH, JSON.stringify(token, null, 2));
 }
 
-export function deleteToken(): void {
-  if (!canPersistTokenToFile()) {
-    console.warn('Token do Google está configurado via variável de ambiente; remova-o manualmente no Coolify se necessário.');
+async function deleteTokenFileIfPossible(): Promise<void> {
+  if (hasEmbeddedGoogleToken()) {
     return;
   }
 
   try {
     fs.unlinkSync(TOKEN_PATH);
-    console.log('Token removido');
   } catch {
-    // Ignora se não existir
+    // Ignora se nao existir
+  }
+}
+
+function getTokenSignature(token: GoogleTokenShape) {
+  return JSON.stringify({
+    access_token: token.access_token || null,
+    refresh_token: token.refresh_token || null,
+    expiry_date: token.expiry_date || null,
+  });
+}
+
+async function loadTokenCandidates(): Promise<GoogleTokenCandidate[]> {
+  const candidates: GoogleTokenCandidate[] = [];
+  const seenSignatures = new Set<string>();
+
+  const registerCandidate = (token: GoogleTokenShape | null, source: TokenSource) => {
+    if (!token?.access_token && !token?.refresh_token) {
+      return;
+    }
+
+    const signature = getTokenSignature(token);
+    if (seenSignatures.has(signature)) {
+      return;
+    }
+
+    seenSignatures.add(signature);
+    candidates.push({ token, source });
+  };
+
+  registerCandidate(await loadGoogleTokenFromDatabase(), 'database');
+  registerCandidate(loadTokenFromEnv(), 'environment');
+  registerCandidate(loadTokenFromFile(), 'file');
+
+  return candidates;
+}
+
+async function persistToken(token: GoogleTokenShape, source: TokenSource | 'oauth' = 'oauth') {
+  const normalizedToken = normalizeGoogleToken(token);
+
+  await saveGoogleTokenToDatabase(normalizedToken);
+
+  if (source === 'file' || (!hasEmbeddedGoogleToken() && source === 'oauth')) {
+    saveTokenToFile(normalizedToken);
   }
 }
 
@@ -196,51 +262,99 @@ function createOAuthClient() {
   );
 }
 
-export async function getAuthenticatedClient(): Promise<OAuth2Client> {
-  const oAuth2Client = createOAuthClient();
-  const token = loadToken();
-
-  if (!token) {
-    throw new Error('Token do Google não encontrado. Configure a autenticação antes de usar o Drive.');
+function sanitizeReturnTo(returnTo?: string | null) {
+  if (!returnTo || !returnTo.startsWith('/')) {
+    return DEFAULT_RETURN_TO;
   }
 
-  oAuth2Client.setCredentials(token);
+  return returnTo;
+}
 
-  if (token.expiry_date && token.expiry_date < Date.now() && token.refresh_token) {
-    console.log('Token do Google expirado, tentando renovar...');
+function isGoogleReauthError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
 
-    try {
-      const { credentials: newCredentials } = await oAuth2Client.refreshAccessToken();
-      const mergedCredentials = {
-        ...token,
-        ...newCredentials,
-        refresh_token: newCredentials.refresh_token || token.refresh_token,
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes('invalid_grant') ||
+    message.includes('invalid_rapt') ||
+    message.includes('reauth') ||
+    message.includes('token do google expirado') ||
+    message.includes('invalid credentials')
+  );
+}
+
+async function validateTokenCandidate(candidate: GoogleTokenCandidate) {
+  const oAuth2Client = createOAuthClient();
+  oAuth2Client.setCredentials(candidate.token);
+
+  let credentials = { ...candidate.token };
+
+  try {
+    const accessTokenResult = await oAuth2Client.getAccessToken();
+    const freshAccessToken = accessTokenResult?.token;
+
+    if (freshAccessToken && freshAccessToken !== credentials.access_token) {
+      credentials = {
+        ...credentials,
+        access_token: freshAccessToken,
       };
+      oAuth2Client.setCredentials(credentials);
+    }
 
-      saveToken(mergedCredentials);
-      oAuth2Client.setCredentials(mergedCredentials);
-      console.log('Token do Google renovado com sucesso');
+    if (!credentials.access_token) {
+      throw new Error('Token do Google nao possui access_token valido.');
+    }
+
+    await persistToken(credentials, candidate.source);
+
+    return oAuth2Client;
+  } catch (error) {
+    console.error(`Falha ao validar token do Google vindo de ${candidate.source}:`, error);
+    throw error;
+  }
+}
+
+export async function getAuthenticatedClient(): Promise<OAuth2Client> {
+  const candidates = await loadTokenCandidates();
+
+  if (candidates.length === 0) {
+    throw new Error('Token do Google nao encontrado. Configure a autenticacao antes de usar o Drive.');
+  }
+
+  let lastError: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      return await validateTokenCandidate(candidate);
     } catch (error) {
-      console.error('Erro ao renovar token do Google:', error);
-
-      if (canPersistTokenToFile()) {
-        deleteToken();
-      }
-
-      throw new Error('Token do Google expirado. Refaça a autenticação.');
+      lastError = error;
     }
   }
 
-  return oAuth2Client;
+  if (lastError && isGoogleReauthError(lastError)) {
+    await clearGoogleTokenFromDatabase();
+    await deleteTokenFileIfPossible();
+    throw new Error('Token do Google expirado ou revogado. Refaça a autenticacao.');
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error('Nao foi possivel autenticar com o Google Drive.');
 }
 
-export function getAuthUrl(): string {
+export function getAuthUrl(returnTo?: string): string {
   const oAuth2Client = createOAuthClient();
 
   return oAuth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent',
+    state: sanitizeReturnTo(returnTo),
   });
 }
 
@@ -248,12 +362,52 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
   const oAuth2Client = createOAuthClient();
   const { tokens } = await oAuth2Client.getToken(code);
 
-  saveToken(tokens);
+  await persistToken(tokens as GoogleTokenShape, 'oauth');
 }
 
-export function isAuthenticated(): boolean {
-  const token = loadToken();
-  return Boolean(token?.access_token && token?.refresh_token);
+export async function deleteToken(): Promise<void> {
+  await clearGoogleTokenFromDatabase();
+  await deleteTokenFileIfPossible();
+}
+
+export async function isAuthenticated(): Promise<boolean> {
+  try {
+    await getAuthenticatedClient();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getGoogleAuthStatus(returnTo?: string): Promise<GoogleAuthStatus> {
+  const authUrl = getAuthUrl(returnTo);
+  const tokenUpdatedAt = await getGoogleTokenUpdatedAt();
+
+  try {
+    await getAuthenticatedClient();
+    return {
+      authenticated: true,
+      authUrl,
+      message: 'Google Drive autenticado e pronto para uso.',
+      reauthRequired: false,
+      tokenUpdatedAt: tokenUpdatedAt?.toISOString() || null,
+    };
+  } catch (error) {
+    return {
+      authenticated: false,
+      authUrl,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Google Drive nao autenticado. Configure a integracao para continuar.',
+      reauthRequired: true,
+      tokenUpdatedAt: tokenUpdatedAt?.toISOString() || null,
+    };
+  }
+}
+
+export function getAuthReturnPathFromState(state?: string | null) {
+  return sanitizeReturnTo(state);
 }
 
 async function getOrCreateFolder(
@@ -408,15 +562,17 @@ export async function listFilesInDriveFolder(folderNames: string[]): Promise<Dri
     spaces: 'drive',
   });
 
-  return (response.data.files || []).map((file) => ({
-    fileId: file.id || '',
-    fileName: file.name || '',
-    webViewLink: file.webViewLink || '',
-    mimeType: file.mimeType || null,
-    size: file.size || null,
-    createdTime: file.createdTime || null,
-    modifiedTime: file.modifiedTime || null,
-  })).filter((file) => Boolean(file.fileId));
+  return (response.data.files || [])
+    .map((file) => ({
+      fileId: file.id || '',
+      fileName: file.name || '',
+      webViewLink: file.webViewLink || '',
+      mimeType: file.mimeType || null,
+      size: file.size || null,
+      createdTime: file.createdTime || null,
+      modifiedTime: file.modifiedTime || null,
+    }))
+    .filter((file) => Boolean(file.fileId));
 }
 
 async function ensurePaymentFolderStructure(
