@@ -164,18 +164,8 @@ export default function SettingsPage() {
       setTestResult(null);
       setNotificationLogs([]);
 
-      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET;
-      
-      if (!cronSecret) {
-        setTestError('❌ Erro: NEXT_PUBLIC_CRON_SECRET não configurado no .env');
-        setTestingNotifications(false);
-        return;
-      }
-
-      const response = await fetch('/api/cron/notify-shifts', {
-        headers: {
-          'Authorization': `Bearer ${cronSecret}`,
-        },
+      const response = await fetch('/api/admin/notifications/test-daily', {
+        method: 'POST',
       });
 
       if (response.ok) {
@@ -192,7 +182,7 @@ export default function SettingsPage() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setTestError(`❌ Erro ao executar teste: ${errorData.error || 'Verifique se CRON_SECRET está correto'}`);
+        setTestError(`❌ Erro ao executar teste: ${errorData.error || 'Verifique sua sessão de administrador'}`);
       }
     } catch (err) {
       setTestError('❌ Erro ao executar teste de notificações. Verifique o console do navegador para mais detalhes.');
